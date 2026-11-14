@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.19
+// @version      1.20
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.19 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.20 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.19';
-  const PANEL_TITLE = '0click 1.19';
+  const SCRIPT_VERSION = '1.20';
+  const PANEL_TITLE = '0click 1.20';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1546,6 +1546,7 @@
     if (raw.length > 60) raw = raw.slice(0, 60);
     return raw;
   }
+  let teamsSendInFlight = 0;
   function sendTeams(text) {
     const stored = getTeamsWebhook();
     if (!stored) return Promise.resolve({ sent: false, reason: 'no-url' });
@@ -1553,7 +1554,12 @@
     if (!xhr) return Promise.resolve({ sent: false, reason: 'no-gm' });
     const url = teamsRequestUrl(stored);
     const data = JSON.stringify(teamsPayload(text));
+    teamsSendInFlight++;
     return new Promise(function (resolve) {
+      const done = function (result) {
+        teamsSendInFlight = Math.max(0, teamsSendInFlight - 1);
+        resolve(result);
+      };
       try {
         xhr({
           method: 'POST',
@@ -1563,18 +1569,18 @@
           timeout: TEAMS_TIMEOUT_MS,
           onload: function (res) {
             const status = res && res.status != null ? Number(res.status) : 0;
-            resolve({ sent: status >= 200 && status < 300, status: status });
+            done({ sent: status >= 200 && status < 300, status: status });
           },
           onerror: function (res) {
             const status = res && res.status != null ? Number(res.status) : 0;
-            resolve({ sent: false, status: status, reason: 'blocked/network', error: teamsErrorDetail(res) });
+            done({ sent: false, status: status, reason: 'blocked/network', error: teamsErrorDetail(res) });
           },
           ontimeout: function () {
-            resolve({ sent: false, status: 0, reason: 'timeout' });
+            done({ sent: false, status: 0, reason: 'timeout' });
           }
         });
       } catch (e) {
-        resolve({ sent: false, status: 0, reason: 'blocked/network', error: teamsErrorDetail({ error: e && e.message }) });
+        done({ sent: false, status: 0, reason: 'blocked/network', error: teamsErrorDetail({ error: e && e.message }) });
       }
     });
   }
@@ -1944,12 +1950,148 @@
     teamsAlertPending = Object.create(null);
   }
 
+  const AUTO_REFRESH_KEY = 'autoRefresh';
+  const AUTO_REFRESH_MS = 5 * 60 * 1000;
+  const AUTO_REFRESH_RETRY_MS = 60 * 1000;
+  const AUTO_REFRESH_TYPING_MS = 60 * 1000;
+  let autoRefreshTimer = null;
+  let autoRefreshRetryTimer = null;
+  let autoReloadRequested = false;
+  let lastTypingAt = 0;
+  let typingListenersAttached = false;
+
+  function autoRefreshEnabled() {
+    try {
+      if (typeof GM_getValue === 'function') {
+        const v = GM_getValue(AUTO_REFRESH_KEY, true);
+        if (v === false || v === 'false' || v === 0 || v === '0') return false;
+        return true;
+      }
+    } catch (e) { /* ignore */ }
+    return true;
+  }
+  function setAutoRefreshEnabled(on) {
+    const value = !!on;
+    try {
+      if (typeof GM_setValue === 'function') GM_setValue(AUTO_REFRESH_KEY, value);
+    } catch (e) { /* ignore */ }
+    if (value) startAutoRefresh();
+    else stopAutoRefresh();
+    return value;
+  }
+  function toggleAutoRefresh() {
+    const next = !autoRefreshEnabled();
+    setAutoRefreshEnabled(next);
+    showTeamsNote(next ? 'Auto-refresh on' : 'Auto-refresh off');
+    return next;
+  }
+  function isEditableTarget(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.isContentEditable) return true;
+    const tag = (el.tagName || '').toUpperCase();
+    if (tag === 'TEXTAREA') return true;
+    if (tag === 'INPUT') {
+      const type = String(el.type || 'text').toLowerCase();
+      if (type === 'button' || type === 'submit' || type === 'reset' || type === 'checkbox' || type === 'radio' || type === 'file' || type === 'hidden' || type === 'range' || type === 'color' || type === 'image') return false;
+      return true;
+    }
+    return false;
+  }
+  function noteTypingActivity(ev) {
+    if (isEditableTarget(ev && ev.target)) lastTypingAt = Date.now();
+  }
+  function attachTypingListeners() {
+    if (typingListenersAttached) return;
+    typingListenersAttached = true;
+    try {
+      document.addEventListener('focusin', noteTypingActivity, true);
+      document.addEventListener('input', noteTypingActivity, true);
+      document.addEventListener('keydown', noteTypingActivity, true);
+      document.addEventListener('paste', noteTypingActivity, true);
+    } catch (e) { typingListenersAttached = false; }
+  }
+  function isUserActivelyTyping() {
+    try {
+      if (!isEditableTarget(document.activeElement)) return false;
+    } catch (e) { return false; }
+    if (!lastTypingAt) return false;
+    return (Date.now() - lastTypingAt) < AUTO_REFRESH_TYPING_MS;
+  }
+  function shouldPostponeAutoRefresh() {
+    return teamsSendInFlight > 0 || isUserActivelyTyping();
+  }
+  function scheduleAutoRefreshRetry() {
+    if (autoRefreshRetryTimer) clearTimeout(autoRefreshRetryTimer);
+    autoRefreshRetryTimer = setTimeout(function () {
+      autoRefreshRetryTimer = null;
+      autoRefreshTick();
+    }, AUTO_REFRESH_RETRY_MS);
+  }
+  function autoRefreshRetryPending() {
+    return !!autoRefreshRetryTimer;
+  }
+  function triggerAutoReload() {
+    if (autoReloadRequested) return false;
+    autoReloadRequested = true;
+    try {
+      const w = pageWin() || window;
+      if (w && typeof w.__zclickReload === 'function') {
+        w.__zclickReload();
+        return true;
+      }
+      const loc = (w && w.location) || location;
+      if (loc && typeof loc.reload === 'function') {
+        loc.reload();
+        return true;
+      }
+    } catch (e) { /* ignore */ }
+    autoReloadRequested = false;
+    return false;
+  }
+  function autoRefreshTick() {
+    if (!autoRefreshEnabled()) {
+      stopAutoRefresh();
+      return false;
+    }
+    if (shouldPostponeAutoRefresh()) {
+      scheduleAutoRefreshRetry();
+      return false;
+    }
+    if (autoRefreshRetryTimer) {
+      clearTimeout(autoRefreshRetryTimer);
+      autoRefreshRetryTimer = null;
+    }
+    return triggerAutoReload();
+  }
+  function startAutoRefresh() {
+    stopAutoRefresh();
+    if (!autoRefreshEnabled()) return false;
+    attachTypingListeners();
+    if (typeof setInterval !== 'function') return false;
+    autoRefreshTimer = setInterval(autoRefreshTick, AUTO_REFRESH_MS);
+    return true;
+  }
+  function stopAutoRefresh() {
+    if (autoRefreshTimer) {
+      clearInterval(autoRefreshTimer);
+      autoRefreshTimer = null;
+    }
+    if (autoRefreshRetryTimer) {
+      clearTimeout(autoRefreshRetryTimer);
+      autoRefreshRetryTimer = null;
+    }
+  }
+  function resetAutoReloadRequested() {
+    autoReloadRequested = false;
+  }
+
   function registerTeamsMenu() {
     try {
       if (typeof GM_registerMenuCommand === 'function') {
         GM_registerMenuCommand('Set Teams webhook URL', promptSetTeamsWebhook);
         GM_registerMenuCommand('Send Teams test', sendTeamsTest);
         GM_registerMenuCommand('Teams alerts: on/off', toggleTeamsAlerts);
+        GM_registerMenuCommand('Auto-refresh (5 min): on/off', toggleAutoRefresh);
       }
     } catch (e) { /* GM menu unavailable in this context */ }
   }
@@ -1976,6 +2118,10 @@
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
       loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusNote,
       alertWindowDates, isAlertDayKept, pruneAlertEntries, formatAlertClock,
+      AUTO_REFRESH_KEY, AUTO_REFRESH_MS, AUTO_REFRESH_RETRY_MS, AUTO_REFRESH_TYPING_MS,
+      autoRefreshEnabled, setAutoRefreshEnabled, toggleAutoRefresh, startAutoRefresh, stopAutoRefresh,
+      autoRefreshTick, autoRefreshRetryPending, shouldPostponeAutoRefresh, isUserActivelyTyping,
+      resetAutoReloadRequested, getTeamsSendInFlight: function () { return teamsSendInFlight; },
       isProblemStatus, countErrorSeries, errorSeriesLines, statusLabel,
       findErrorDomRow, locateErrorSeries, sameStatus,
       setApiRowsForTest: (rows, path) => { apiRows = rows; apiPath = path || '/api/jobs'; apiState = rows ? 'api' : 'idle'; lastJobsUrl = path || lastJobsUrl; },
@@ -1988,6 +2134,7 @@
   function start() {
     addPanel();
     registerTeamsMenu();
+    startAutoRefresh();
     hookHistory();
     const root = document.documentElement || document.body;
     if (root && typeof MutationObserver === 'function') {

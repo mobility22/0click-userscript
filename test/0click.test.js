@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.19', /@version\s+1\.19\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.19'/.test(src), true);
-check('script header comment 0click 1.19', /\/\/ 0click 1\.19\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.19'/.test(src), true);
+check('script @version 1.20', /@version\s+1\.20\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.20'/.test(src), true);
+check('script header comment 0click 1.20', /\/\/ 0click 1\.20\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.20'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -31,7 +31,10 @@ check('script closed shadow', src.includes("attachShadow({ mode: 'closed' })"), 
 check('script @downloadURL raw main', src.includes('https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js'), true);
 check('script @match Zero-Click host', src.includes('@match        http://10.240.61.81:18001/*'), true);
 check('PHI-free log: no innerText dump in log()', /log\([^)]*innerText/.test(src), false);
-check('GM_setValue keys are webhook, alerted hashes, and alert toggle', /const TEAMS_WEBHOOK_KEY = 'teamsWebhook'/.test(src) && /const TEAMS_ALERTED_KEY = 'teamsAlerted'/.test(src) && /const TEAMS_ALERTS_ENABLED_KEY = 'teamsAlertsEnabled'/.test(src) && /GM_setValue\(\s*TEAMS_WEBHOOK_KEY/.test(src) && /GM_setValue\(\s*TEAMS_ALERTED_KEY/.test(src) && /GM_setValue\(\s*TEAMS_ALERTS_ENABLED_KEY/.test(src) && /GM_getValue\(\s*TEAMS_WEBHOOK_KEY/.test(src) && /GM_getValue\(\s*TEAMS_ALERTED_KEY/.test(src) && /GM_getValue\(\s*TEAMS_ALERTS_ENABLED_KEY/.test(src) && !/GM_setValue\(\s*['"]/.test(src) && !/GM_getValue\(\s*['"]/.test(src), true);
+check('GM_setValue keys are webhook, alerted hashes, alert toggle, and auto-refresh', /const TEAMS_WEBHOOK_KEY = 'teamsWebhook'/.test(src) && /const TEAMS_ALERTED_KEY = 'teamsAlerted'/.test(src) && /const TEAMS_ALERTS_ENABLED_KEY = 'teamsAlertsEnabled'/.test(src) && /const AUTO_REFRESH_KEY = 'autoRefresh'/.test(src) && /GM_setValue\(\s*TEAMS_WEBHOOK_KEY/.test(src) && /GM_setValue\(\s*TEAMS_ALERTED_KEY/.test(src) && /GM_setValue\(\s*TEAMS_ALERTS_ENABLED_KEY/.test(src) && /GM_setValue\(\s*AUTO_REFRESH_KEY/.test(src) && /GM_getValue\(\s*TEAMS_WEBHOOK_KEY/.test(src) && /GM_getValue\(\s*TEAMS_ALERTED_KEY/.test(src) && /GM_getValue\(\s*TEAMS_ALERTS_ENABLED_KEY/.test(src) && /GM_getValue\(\s*AUTO_REFRESH_KEY/.test(src) && !/GM_setValue\(\s*['"]/.test(src) && !/GM_getValue\(\s*['"]/.test(src), true);
+check('auto-refresh is a 5 minute location.reload', /const AUTO_REFRESH_MS = 5 \* 60 \* 1000/.test(src) && /const AUTO_REFRESH_RETRY_MS = 60 \* 1000/.test(src) && /setInterval\(\s*autoRefreshTick,\s*AUTO_REFRESH_MS\)/.test(src) && (src.match(/loc\.reload\(\s*\)/g) || []).length === 1 && src.indexOf('function triggerAutoReload') !== -1 && src.indexOf('location.reload') === src.lastIndexOf('location.reload') && src.indexOf('auto 5m') === -1, true);
+check('auto-refresh does not pause when the tab is hidden', src.indexOf('visibilitychange') === -1 && src.indexOf('document.hidden') === -1 && src.indexOf('visibilityState') === -1, true);
+check('auto-refresh does not click the page', src.indexOf('.click()') === -1, true);
 check('no localStorage of row data', !/localStorage\.(setItem|getItem)/.test(src), true);
 check('debug flag off by default', /const DEBUG = false/.test(src), true);
 check('jobs/page requests stay GET only', /method:\s*'GET'/.test(src) && !/method:\s*['"]PUT['"]/.test(src) && !/method:\s*['"]DELETE['"]/.test(src), true);
@@ -123,9 +126,16 @@ function loadApi(html) {
       window.GM_setValue = function (key, val) {
         window.__zclickGmValues[key] = val;
       };
+      window.__zclickReloads = 0;
+      window.__zclickReload = function () { window.__zclickReloads += 1; };
+      window.__zclickGmPending = [];
       window.GM_xmlhttpRequest = function (opts) {
         window.__zclickGmRequests.push(opts);
         const mode = window.__zclickGmMode || (window.__zclickGmError ? 'error' : 'load');
+        if (mode === 'pending') {
+          window.__zclickGmPending.push(opts);
+          return;
+        }
         if (mode === 'timeout') {
           if (typeof opts.ontimeout === 'function') opts.ontimeout();
           return;
@@ -231,7 +241,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.19', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.19'), true);
+  check('panel title is 0click 1.20', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.20'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -822,7 +832,7 @@ function runTeamsTests() {
     window.__zclickGmStatus = 403;
     window.__zclickGmError = false;
     api.registerTeamsMenu();
-    check('Teams menu commands are registered', window.__zclickMenu.map(function (m) { return m.title; }), ['Set Teams webhook URL', 'Send Teams test', 'Teams alerts: on/off']);
+    check('Teams menu commands are registered', window.__zclickMenu.map(function (m) { return m.title; }), ['Set Teams webhook URL', 'Send Teams test', 'Teams alerts: on/off', 'Auto-refresh (5 min): on/off']);
     return api.sendTeamsTest();
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
@@ -1255,8 +1265,133 @@ function runTeamsAlertTests() {
   });
 }
 
+function runAutoRefreshTests() {
+  const FAKE_HOOK = 'https://example.invalid/teams-webhook';
+  const P_ORANGE = 'ORANGE, FAKE (555555)';
+  const todayOnlyHtml = jobsTableFromRows([
+    jobRowHtml('Transferred', '-', P_ORANGE, 'KP_ROS', 'CT HEAD', '2026-11-12 13:00:00')
+  ]);
+
+  const { api, window, document } = loadApi(todayOnlyHtml);
+  check('auto-refresh defaults on', api.autoRefreshEnabled(), true);
+  check('auto-refresh interval is 5 minutes', api.AUTO_REFRESH_MS, 5 * 60 * 1000);
+  check('auto-refresh retry is 1 minute', api.AUTO_REFRESH_RETRY_MS, 60 * 1000);
+  check('typing idle window is 60 seconds', api.AUTO_REFRESH_TYPING_MS, 60 * 1000);
+
+  const intervals = [];
+  const timeouts = [];
+  const origInterval = window.setInterval;
+  const origTimeout = window.setTimeout;
+  const origClearInterval = window.clearInterval;
+  const origClearTimeout = window.clearTimeout;
+  window.setInterval = function (fn, ms) {
+    intervals.push({ fn: fn, ms: ms });
+    return origInterval ? origInterval.call(window, fn, ms) : intervals.length;
+  };
+  window.setTimeout = function (fn, ms) {
+    timeouts.push({ fn: fn, ms: ms });
+    return origTimeout ? origTimeout.call(window, fn, ms) : timeouts.length;
+  };
+  window.clearInterval = function (id) {
+    return origClearInterval ? origClearInterval.call(window, id) : undefined;
+  };
+  window.clearTimeout = function (id) {
+    return origClearTimeout ? origClearTimeout.call(window, id) : undefined;
+  };
+
+  check('startAutoRefresh arms a 5 minute interval', api.startAutoRefresh(), true);
+  check('interval triggers the auto-refresh tick at 5 minutes', intervals.length >= 1 && intervals[intervals.length - 1].ms === api.AUTO_REFRESH_MS && intervals[intervals.length - 1].fn === api.autoRefreshTick, true);
+  window.__zclickReloads = 0;
+  intervals[intervals.length - 1].fn();
+  check('the 5 minute tick reloads the page', window.__zclickReloads, 1);
+  check('a second tick does not overlap reloads', (intervals[intervals.length - 1].fn(), window.__zclickReloads), 1);
+
+  api.resetAutoReloadRequested();
+  window.__zclickReloads = 0;
+  api.setAutoRefreshEnabled(false);
+  check('toggle off disables auto-refresh', api.autoRefreshEnabled(), false);
+  const afterOff = intervals.length;
+  api.autoRefreshTick();
+  check('toggle off stops reloads', window.__zclickReloads, 0);
+  check('toggle off clears a retry', api.autoRefreshRetryPending(), false);
+  api.startAutoRefresh();
+  check('start while toggled off does not arm an interval', intervals.length, afterOff);
+  const noteOff = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
+  api.addPanel();
+  api.toggleAutoRefresh();
+  const noteOn = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
+  check('toggle on shows a generic note', noteOn, 'Auto-refresh on');
+  check('toggle on re-arms the 5 minute interval', intervals.length > afterOff && intervals[intervals.length - 1].ms === api.AUTO_REFRESH_MS, true);
+  api.resetAutoReloadRequested();
+  window.__zclickReloads = 0;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  document.body.appendChild(input);
+  input.focus();
+  input.dispatchEvent(new window.Event('input', { bubbles: true }));
+  const retryBefore = timeouts.filter(function (t) { return t.ms === api.AUTO_REFRESH_RETRY_MS; }).length;
+  check('focused input with recent activity postpones refresh', api.autoRefreshTick(), false);
+  check('typing does not reload', window.__zclickReloads, 0);
+  check('typing schedules a 1 minute retry', api.autoRefreshRetryPending() && timeouts.filter(function (t) { return t.ms === api.AUTO_REFRESH_RETRY_MS; }).length === retryBefore + 1, true);
+  input.blur();
+  api.resetAutoReloadRequested();
+  window.__zclickReloads = 0;
+  check('blurred input allows a later tick to reload', api.autoRefreshTick(), true);
+  check('reload proceeds after typing stops', window.__zclickReloads, 1);
+
+  api.resetAutoReloadRequested();
+  window.__zclickReloads = 0;
+  api.setTeamsWebhook(FAKE_HOOK);
+  window.__zclickGmMode = 'pending';
+  window.__zclickGmPending = [];
+  const sendP = api.sendTeams('0click test OK');
+  check('a pending Teams send is in flight', api.getTeamsSendInFlight() >= 1, true);
+  check('in-flight Teams send postpones reload', api.autoRefreshTick(), false);
+  check('in-flight send does not reload', window.__zclickReloads, 0);
+  check('in-flight send schedules a 1 minute retry', api.autoRefreshRetryPending(), true);
+  window.__zclickGmMode = 'load';
+  window.__zclickGmStatus = 202;
+  window.__zclickGmPending.splice(0).forEach(function (opts) {
+    if (typeof opts.onload === 'function') opts.onload({ status: 202 });
+  });
+  return sendP.then(function () {
+    check('send is no longer in flight after it finishes', api.getTeamsSendInFlight(), 0);
+    api.resetAutoReloadRequested();
+    window.__zclickReloads = 0;
+    check('a later tick reloads after the send finishes', api.autoRefreshTick(), true);
+    check('reload runs once the send is done', window.__zclickReloads, 1);
+    api.stopAutoRefresh();
+    window.setInterval = origInterval;
+    window.setTimeout = origTimeout;
+    window.clearInterval = origClearInterval;
+    window.clearTimeout = origClearTimeout;
+
+    const first = loadApi(todayOnlyHtml);
+    first.api.setTeamsWebhook(FAKE_HOOK);
+    first.window.__zclickGmStatus = 202;
+    first.window.__zclickGmMode = 'load';
+    first.api.addPanel();
+    return Promise.resolve().then(function () {
+      check('first load alerts once before a reload', first.window.__zclickGmRequests.length, 1);
+      const stored = storedAlerted(first.window);
+      check('dedup storage has no patient data', hasPhiLeak(stored, [P_ORANGE, 'ORANGE', '555555', 'CT HEAD']), false);
+      const reloaded = loadApi(todayOnlyHtml);
+      reloaded.window.__zclickGmValues.teamsWebhook = FAKE_HOOK;
+      reloaded.window.__zclickGmValues.teamsAlerted = stored;
+      reloaded.window.__zclickGmRequests = [];
+      reloaded.window.__zclickGmStatus = 202;
+      reloaded.api.addPanel();
+      return Promise.resolve().then(function () {
+        check('dedup survives a reload via GM storage', reloaded.window.__zclickGmRequests.length, 0);
+        check('reloaded storage still has no patient data', hasPhiLeak(storedAlerted(reloaded.window), [P_ORANGE, 'ORANGE', '555555', 'CT HEAD']), false);
+      });
+    });
+  });
+}
+
 function finish() {
-  Promise.resolve().then(runClipboardFallback).then(runTeamsTests).then(runTeamsAlertTests).catch(function (err) {
+  Promise.resolve().then(runClipboardFallback).then(runTeamsTests).then(runTeamsAlertTests).then(runAutoRefreshTests).catch(function (err) {
     failed++;
     console.log('FAIL clipboard or Teams tests threw ' + String(err && err.message || err));
   }).then(function () {
