@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.22', /@version\s+1\.21\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.21'/.test(src), true);
-check('script header comment 0click 1.22', /\/\/ 0click 1\.21\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.21'/.test(src), true);
+check('script @version 1.22', /@version\s+1\.22\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.22'/.test(src), true);
+check('script header comment 0click 1.22', /\/\/ 0click 1\.22\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.22'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
