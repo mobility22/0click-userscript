@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.18
+// @version      1.19
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.18 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.19 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.18';
-  const PANEL_TITLE = '0click 1.18';
+  const SCRIPT_VERSION = '1.19';
+  const PANEL_TITLE = '0click 1.19';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -86,6 +86,11 @@
   function formatClock(d) {
     const pad = n => String(n).padStart(2, '0');
     return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+  function formatAlertClock(d) {
+    const pad = n => String(n).padStart(2, '0');
+    const dt = d instanceof Date ? d : nowFn();
+    return pad(dt.getHours()) + ':' + pad(dt.getMinutes());
   }
   function formatLastSubmitted(text, now) {
     const d = parseSubmittedDateTime(text);
@@ -1470,7 +1475,7 @@
   }
 
 
-  // Teams webhook. Store the URL under the teamsWebhook key, never in source. Auto-alerts use counts only, never PHI.
+  // Teams webhook. Store the URL under the teamsWebhook key, never in source. Auto-alert cards may include patient lines at runtime only; never log card text, names, or IDs.
   // @inject-into page still exposes granted GM_* in Tampermonkey (GM_setClipboard already works);
   // typeof-guard every call so a host without those APIs just no-ops.
   const TEAMS_WEBHOOK_KEY = 'teamsWebhook';
@@ -1495,7 +1500,10 @@
     return false;
   }
   function teamsPayload(text) {
-    const msg = text == null ? '' : String(text);
+    const lines = Array.isArray(text)
+      ? text.map(function (t) { return t == null ? '' : String(t); })
+      : [text == null ? '' : String(text)];
+    if (!lines.length) lines.push('');
     return {
       type: 'message',
       attachments: [{
@@ -1504,7 +1512,9 @@
           $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
           type: 'AdaptiveCard',
           version: '1.4',
-          body: [{ type: 'TextBlock', text: msg, wrap: true }]
+          body: lines.map(function (msg) {
+            return { type: 'TextBlock', text: msg, wrap: true };
+          })
         }
       }]
     };
@@ -1719,22 +1729,47 @@
   function teamsUnmatchedAlertText(n) {
     return '0click: ' + n + ' new unmatched patient(s)';
   }
+  function unmatchedPatientIdentity(patient) {
+    const id = extractPatientId(patient);
+    if (id) return 'id:' + id;
+    return 'key:' + String(patient == null ? '' : patient);
+  }
+  function teamsUnmatchedPatientLine(patient, day, detectedAt) {
+    const name = displayPatientName(patient) || '';
+    const id = extractPatientId(patient);
+    const who = id ? (name + ' (' + id + ')') : name;
+    const time = (day === 'yesterday' ? 'Yest. ' : '') + formatAlertClock(detectedAt);
+    return (who ? who + ' \u2014 flagged ' : 'flagged ') + time;
+  }
+  function teamsUnmatchedAlertLines(items, detectedAt) {
+    const list = items || [];
+    const lines = [teamsUnmatchedAlertText(list.length)];
+    for (let i = 0; i < list.length; i++) {
+      lines.push(teamsUnmatchedPatientLine(list[i].patient, list[i].day, detectedAt));
+    }
+    return lines;
+  }
   function unmatchedOnlyPatients(todaySummary, yesterdaySummary) {
     const seen = Object.create(null);
     const patients = [];
-    function addFrom(summary) {
+    function addFrom(summary, day) {
       const groups = (summary && summary.groups) || [];
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i];
         if (!isUnmatchedOnly(g) || !g.patient) continue;
-        const key = String(g.patient);
-        if (seen[key]) continue;
-        seen[key] = true;
-        patients.push(key);
+        const ident = unmatchedPatientIdentity(g.patient);
+        const hash = hashAlertKey(g.patient);
+        if (seen[ident]) {
+          if (hash && seen[ident].hashes.indexOf(hash) === -1) seen[ident].hashes.push(hash);
+          continue;
+        }
+        const item = { patient: String(g.patient), day: day, hashes: hash ? [hash] : [] };
+        seen[ident] = item;
+        patients.push(item);
       }
     }
-    addFrom(todaySummary);
-    addFrom(yesterdaySummary);
+    addFrom(todaySummary, 'today');
+    addFrom(yesterdaySummary, 'yesterday');
     return patients;
   }
   function alertWindowDates(now) {
@@ -1837,6 +1872,21 @@
     } catch (e) { /* ignore */ }
     return false;
   }
+  function teamsAlertStatusNote(result) {
+    if (!result) return 'Teams alert failed';
+    if (result.reason === 'no-url') return 'Teams webhook not set';
+    if (result.reason === 'no-gm') return 'Teams alert failed (no-gm)';
+    if (result.reason === 'timeout') return 'Teams alert failed (timeout)';
+    if (result.sent) return 'Teams alert sent';
+    if (result.reason === 'blocked/network') {
+      const detail = result.error ? String(result.error) : '';
+      return detail
+        ? ('Teams alert failed (blocked/network: ' + detail + ')')
+        : 'Teams alert failed (blocked/network)';
+    }
+    const status = result.status ? String(result.status) : 'failed';
+    return 'Teams alert failed (' + status + ')';
+  }
   function maybeAlertNewUnmatched(todaySummary, yesterdaySummary) {
     if (!teamsAlertsEnabled()) return Promise.resolve({ sent: false, reason: 'disabled' });
     if (!getTeamsWebhook()) return Promise.resolve({ sent: false, reason: 'no-url' });
@@ -1848,28 +1898,44 @@
     const patients = unmatchedOnlyPatients(todaySummary, yesterdaySummary);
     const fresh = [];
     for (let i = 0; i < patients.length; i++) {
-      const h = hashAlertKey(patients[i]);
-      if (!h || known[h] || teamsAlertPending[h]) continue;
-      fresh.push(h);
+      const item = patients[i];
+      const hashes = item.hashes || [];
+      let already = false;
+      for (let j = 0; j < hashes.length; j++) {
+        if (known[hashes[j]] || teamsAlertPending[hashes[j]]) { already = true; break; }
+      }
+      if (already || !hashes.length) continue;
+      fresh.push(item);
     }
     if (!fresh.length) return Promise.resolve({ sent: false, reason: 'none' });
-    for (let i = 0; i < fresh.length; i++) teamsAlertPending[fresh[i]] = true;
-    const text = teamsUnmatchedAlertText(fresh.length);
-    return sendTeams(text).then(function (result) {
+    for (let i = 0; i < fresh.length; i++) {
+      const hashes = fresh[i].hashes || [];
+      for (let j = 0; j < hashes.length; j++) teamsAlertPending[hashes[j]] = true;
+    }
+    const lines = teamsUnmatchedAlertLines(fresh, now);
+    return sendTeams(lines).then(function (result) {
       if (result && result.sent) {
         const next = loadAlerted(now);
         const seen = Object.create(null);
         for (let i = 0; i < next.entries.length; i++) seen[next.entries[i].h] = true;
         const entries = next.entries.slice();
         for (let i = 0; i < fresh.length; i++) {
-          if (seen[fresh[i]]) continue;
-          entries.push({ h: fresh[i], day: todayDate });
+          const hashes = fresh[i].hashes || [];
+          for (let j = 0; j < hashes.length; j++) {
+            if (seen[hashes[j]]) continue;
+            seen[hashes[j]] = true;
+            entries.push({ h: hashes[j], day: todayDate });
+          }
         }
         saveAlerted({ entries: entries });
+        showTeamsNote('Teams alert sent');
       }
-      for (let i = 0; i < fresh.length; i++) delete teamsAlertPending[fresh[i]];
+      for (let i = 0; i < fresh.length; i++) {
+        const hashes = fresh[i].hashes || [];
+        for (let j = 0; j < hashes.length; j++) delete teamsAlertPending[hashes[j]];
+      }
       if (result && !result.sent && result.reason !== 'no-url' && result.reason !== 'none' && result.reason !== 'disabled') {
-        showTeamsNote(teamsStatusNote(result));
+        showTeamsNote(teamsAlertStatusNote(result));
       }
       return result;
     });
@@ -1906,9 +1972,10 @@
       sendTeams, sendTeamsTest, teamsStatusNote, promptSetTeamsWebhook, registerTeamsMenu,
       webhookTail, teamsWebhookPromptMessage, teamsRequestUrl, teamsErrorDetail, TEAMS_TIMEOUT_MS,
       TEAMS_ALERTED_KEY, TEAMS_ALERTS_ENABLED_KEY, sha256Hex, hashAlertKey, isUnmatchedOnly,
-      teamsUnmatchedAlertText, unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
-      loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState,
-      alertWindowDates, isAlertDayKept, pruneAlertEntries,
+      teamsUnmatchedAlertText, teamsUnmatchedPatientLine, teamsUnmatchedAlertLines, unmatchedPatientIdentity,
+      unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
+      loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusNote,
+      alertWindowDates, isAlertDayKept, pruneAlertEntries, formatAlertClock,
       isProblemStatus, countErrorSeries, errorSeriesLines, statusLabel,
       findErrorDomRow, locateErrorSeries, sameStatus,
       setApiRowsForTest: (rows, path) => { apiRows = rows; apiPath = path || '/api/jobs'; apiState = rows ? 'api' : 'idle'; lastJobsUrl = path || lastJobsUrl; },
