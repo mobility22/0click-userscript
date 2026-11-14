@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.22
+// @version      1.23
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.22 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.23 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.22';
-  const PANEL_TITLE = '0click 1.22';
+  const SCRIPT_VERSION = '1.23';
+  const PANEL_TITLE = '0click 1.23';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1294,11 +1294,12 @@
     const n = summary || {};
     const patients = n.patientCount || 0;
     const errors = n.errorCount || 0;
+    const groups = n.groups || [];
     target.appendChild(document.createTextNode(
       patients + ' patient' + (patients === 1 ? '' : 's') +
       ' · ' + (n.seriesCount || 0) + ' series · ' +
-      (n.matchedCount || 0) + ' matched · ' +
-      (n.unmatchedCount || 0) + ' unmatched'
+      groups.filter(g => g.matchedCount > 0 && g.unmatchedCount === 0).length + ' matched · ' +
+      groups.filter(g => g.unmatchedCount > 0).length + ' unmatched'
     ));
     if (errors > 0) {
       target.appendChild(document.createTextNode(' · '));
