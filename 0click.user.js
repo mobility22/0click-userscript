@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.21
+// @version      1.22
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.21 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.22 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.21';
-  const PANEL_TITLE = '0click 1.21';
+  const SCRIPT_VERSION = '1.22';
+  const PANEL_TITLE = '0click 1.22';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1324,8 +1324,11 @@
     const tfoot = el('tfoot');
     const fr = el('tr');
     fr.appendChild(el('td', '', yesterday.patientCount + ' patient' + (yesterday.patientCount === 1 ? '' : 's')));
-    fr.appendChild(el('td', '', yesterday.unmatchedCount + ' unmatched'));
-    fr.appendChild(el('td', '', yesterday.matchedCount + ' matched'));
+    const yGroups = yesterday.groups || [];
+    const yMatchedPatients = yGroups.filter(g => g.matchedCount > 0 && g.unmatchedCount === 0).length;
+    const yUnmatchedPatients = yGroups.filter(g => g.unmatchedCount > 0).length;
+    fr.appendChild(el('td', '', yUnmatchedPatients + ' unmatched'));
+    fr.appendChild(el('td', '', yMatchedPatients + ' matched'));
     const errTd = el('td', '');
     if ((yesterday.errorCount || 0) > 0) {
       errTd.appendChild(el('span', 'error-count', yesterday.errorCount + ' error' + (yesterday.errorCount === 1 ? '' : 's')));

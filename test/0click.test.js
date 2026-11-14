@@ -11,9 +11,9 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.21', /@version\s+1\.21\b/.test(src), true);
+check('script @version 1.22', /@version\s+1\.21\b/.test(src), true);
 check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.21'/.test(src), true);
-check('script header comment 0click 1.21', /\/\/ 0click 1\.21\b/.test(src), true);
+check('script header comment 0click 1.22', /\/\/ 0click 1\.21\b/.test(src), true);
 check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.21'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
@@ -243,7 +243,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.21', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.21'), true);
+  check('panel title is 0click 1.22', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.22'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
