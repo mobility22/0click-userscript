@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.20', /@version\s+1\.20\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.20'/.test(src), true);
-check('script header comment 0click 1.20', /\/\/ 0click 1\.20\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.20'/.test(src), true);
+check('script @version 1.21', /@version\s+1\.21\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.21'/.test(src), true);
+check('script header comment 0click 1.21', /\/\/ 0click 1\.21\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.21'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -43,6 +43,8 @@ check('no hardcoded Teams webhook URL', !/https:\/\/[^\s'"]*(logic\.azure\.com|w
 check('Teams test message has no patient data', /const TEAMS_TEST_MESSAGE = '0click test OK'/.test(src), true);
 check('sendTeams is only used for the test menu and unmatched alerts', (src.match(/sendTeams\(/g) || []).length === 3 && src.indexOf('sendTeams(TEAMS_TEST_MESSAGE)') !== -1 && src.indexOf('sendTeams(lines)') !== -1 && /function maybeAlertNewUnmatched/.test(src) && /function teamsUnmatchedAlertText/.test(src) && src.indexOf("'0click: ' + n + ' new unmatched patient(s)'") !== -1 && /function teamsUnmatchedAlertLines/.test(src) && /function teamsUnmatchedPatientLine/.test(src), true);
 check('auto-alert does not log card text, names, or IDs', src.indexOf('log(lines)') === -1 && src.indexOf('debug(lines)') === -1 && src.indexOf('console.log(lines)') === -1 && src.indexOf('log(text)') === -1 && /showTeamsNote\('Teams alert sent'\)/.test(src) && /function teamsAlertStatusNote/.test(src), true);
+
+check('alert lines use M/D HH:MM with no flagged or Yest.', /function formatAlertStamp/.test(src) && src.indexOf('flagged') === -1 && src.indexOf('Yest.') === -1, true);
 
 const userscriptHeader = src.split('(function ()')[0];
 check('userscript header/metadata has no ROS', /ROS/.test(userscriptHeader), false);
@@ -241,7 +243,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.20', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.20'), true);
+  check('panel title is 0click 1.21', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.21'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -945,9 +947,12 @@ function runTeamsAlertTests() {
   const P_AMBER = 'AMBER, FAKE (666666)';
   const P_GREEN = 'GREEN, FAKE (777777)';
   const DASH = '\u2014';
-  const FLAG_TODAY = '15:00';
-  const todayLine = function (patient) { return patient + ' ' + DASH + ' flagged ' + FLAG_TODAY; };
-  const yestLine = function (patient) { return patient + ' ' + DASH + ' flagged Yest. ' + FLAG_TODAY; };
+  const TODAY_STAMP = '11/12 13:00';
+  const TODAY_STAMP_AMBER = '11/12 12:00';
+  const TODAY_STAMP_LATE = '11/12 13:10';
+  const YEST_STAMP = '11/11 09:00';
+  const todayLine = function (patient, stamp) { return patient + ' ' + DASH + ' ' + (stamp || TODAY_STAMP); };
+  const yestLine = function (patient, stamp) { return patient + ' ' + DASH + ' ' + (stamp || YEST_STAMP); };
   const NAME_MARKERS = [P_ORANGE, P_ORANGE_ALT, P_AMBER, P_GREEN, 'ORANGE', 'AMBER', 'GREEN', '555555', '666666', '777777'];
   const SERIES_MARKERS = ['CT HEAD', 'CT ABDOMEN', 'CT PELVIS', 'CT NECK', '13:00:00', '09:00:00', '12:00:00', '13:10:00'];
   const PHI_MARKERS = NAME_MARKERS.concat(SERIES_MARKERS);
@@ -992,16 +997,18 @@ function runTeamsAlertTests() {
   check('alert hash does not include the date', hashed !== hashApi.sha256Hex('0click-unmatched|2026-11-12|' + P_ORANGE), true);
   check('unmatched alert text for 1', hashApi.teamsUnmatchedAlertText(1), '0click: 1 new unmatched patient(s)');
   check('unmatched alert text for 2', hashApi.teamsUnmatchedAlertText(2), '0click: 2 new unmatched patient(s)');
-  check('today patient line uses name, ID, and detection time', hashApi.teamsUnmatchedPatientLine(P_ORANGE, 'today', NOW), todayLine(P_ORANGE));
-  check('yesterday patient line prefixes Yest.', hashApi.teamsUnmatchedPatientLine(P_AMBER, 'yesterday', NOW), yestLine(P_AMBER));
+  check('today patient line uses name, ID, and M/D HH:MM', hashApi.teamsUnmatchedPatientLine(P_ORANGE, 'today', new Date(2026, 10, 12, 13, 0, 0)), todayLine(P_ORANGE));
+  check('yesterday patient line uses M/D HH:MM without Yest.', hashApi.teamsUnmatchedPatientLine(P_AMBER, 'yesterday', new Date(2026, 10, 11, 9, 0, 0)), yestLine(P_AMBER));
+  check('alert stamp matches M/D HH:MM example', hashApi.formatAlertStamp(new Date(2026, 10, 13, 12, 19, 0)), '11/13 12:19');
+  check('alert stamp does not zero-pad the month or day', hashApi.formatAlertStamp(new Date(2026, 0, 5, 9, 5, 0)), '1/5 09:05');
   check('alert clock is local HH:MM', hashApi.formatAlertClock(NOW), '15:00');
-  const built = hashApi.teamsUnmatchedAlertLines([{ patient: P_ORANGE, day: 'today' }], NOW);
+  const built = hashApi.teamsUnmatchedAlertLines([{ patient: P_ORANGE, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }], NOW);
   check('alert lines start with the unchanged count line', built[0], '0click: 1 new unmatched patient(s)');
   check('alert lines then list the unique patient once', built, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
   const quoted = 'QUOTE, "FAKE" (ABC-1)';
-  const quotedLines = hashApi.teamsUnmatchedAlertLines([{ patient: quoted, day: 'today' }], NOW);
+  const quotedLines = hashApi.teamsUnmatchedAlertLines([{ patient: quoted, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }], NOW);
   const quotedJson = JSON.stringify(hashApi.teamsPayload(quotedLines));
-  check('patient lines stay valid JSON after stringify', JSON.parse(quotedJson).attachments[0].content.body[1].text, quoted + ' ' + DASH + ' flagged ' + FLAG_TODAY);
+  check('patient lines stay valid JSON after stringify', JSON.parse(quotedJson).attachments[0].content.body[1].text, quoted + ' ' + DASH + ' ' + TODAY_STAMP);
   check('Teams alerts default on', hashApi.teamsAlertsEnabled(), true);
   check('isUnmatchedOnly when orange', hashApi.isUnmatchedOnly({ unmatchedCount: 1, matchedCount: 0 }), true);
   check('isUnmatchedOnly is false when a match exists', hashApi.isUnmatchedOnly({ unmatchedCount: 1, matchedCount: 1 }), false);
@@ -1059,7 +1066,7 @@ function runTeamsAlertTests() {
       check('yesterday unmatched-only rows trigger one send', yest.window.__zclickGmRequests.length, 1);
       const lines = alertLinesFromRequest(yest.window.__zclickGmRequests[0]);
       check('yesterday alert first line is the count-only template', lines[0], '0click: 1 new unmatched patient(s)');
-      check('yesterday alert lists the fake name, ID, and Yest. time once', lines, ['0click: 1 new unmatched patient(s)', yestLine(P_AMBER)]);
+      check('yesterday alert lists the fake name, ID, and M/D HH:MM once', lines, ['0click: 1 new unmatched patient(s)', yestLine(P_AMBER)]);
       check('yesterday alert card has no series or job-time text', hasPhiLeak(lines.join('\n'), SERIES_MARKERS), false);
       check('yesterday alert storage has no patient data', hasPhiLeak(storedAlerted(yest.window), PHI_MARKERS), false);
       check('yesterday alert is stored with today as the alert day', alertedEntries(yest.window), [{ h: yest.api.hashAlertKey(P_AMBER), day: '2026-11-12' }]);
@@ -1129,7 +1136,7 @@ function runTeamsAlertTests() {
       const lines = alertLinesFromRequest(two.window.__zclickGmRequests[0]);
       check('two new unmatched patients send one batched message', two.window.__zclickGmRequests.length, 1);
       check('batched alert first line uses N=2', lines[0], '0click: 2 new unmatched patient(s)');
-      check('batched alert lists each unique patient once', lines, ['0click: 2 new unmatched patient(s)', todayLine(P_ORANGE), todayLine(P_AMBER)]);
+      check('batched alert lists each unique patient once', lines, ['0click: 2 new unmatched patient(s)', todayLine(P_ORANGE), todayLine(P_AMBER, TODAY_STAMP_AMBER)]);
       check('batched alert card has no series or job-time text', hasPhiLeak(lines.join('\n'), SERIES_MARKERS), false);
       const expected = [two.api.hashAlertKey(P_ORANGE), two.api.hashAlertKey(P_AMBER)].sort();
       check('batched storage has two hashes and no PHI', alertedHashes(two.window), expected);
@@ -1158,7 +1165,7 @@ function runTeamsAlertTests() {
       const lines = alertLinesFromRequest(multi.window.__zclickGmRequests[0]);
       check('multiple series for one patient send once', multi.window.__zclickGmRequests.length, 1);
       check('multiple series still use N=1', lines[0], '0click: 1 new unmatched patient(s)');
-      check('multiple series list the unique patient once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+      check('multiple series list the unique patient once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE, TODAY_STAMP_LATE)]);
       check('multiple-series storage has one hash', alertedHashes(multi.window), [multi.api.hashAlertKey(P_ORANGE)]);
     });
   }).then(function () {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.20
+// @version      1.21
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.20 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.21 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.20';
-  const PANEL_TITLE = '0click 1.20';
+  const SCRIPT_VERSION = '1.21';
+  const PANEL_TITLE = '0click 1.21';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -87,10 +87,26 @@
     const pad = n => String(n).padStart(2, '0');
     return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
+  function isAlertDate(d) {
+    return !!(d && typeof d.getTime === 'function' && !isNaN(d.getTime()));
+  }
   function formatAlertClock(d) {
     const pad = n => String(n).padStart(2, '0');
-    const dt = d instanceof Date ? d : nowFn();
+    const dt = isAlertDate(d) ? d : nowFn();
     return pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+  }
+  function formatAlertStamp(d) {
+    const dt = isAlertDate(d) ? d : nowFn();
+    return (dt.getMonth() + 1) + '/' + dt.getDate() + ' ' + formatAlertClock(dt);
+  }
+  function latestSubmittedDate(group) {
+    const rows = ((group && group.unmatched) || []).concat((group && group.matched) || []);
+    let best = null;
+    for (let i = 0; i < rows.length; i++) {
+      const d = parseSubmittedDateTime(rows[i] && rows[i].submitted);
+      if (d && (!best || d.getTime() > best.getTime())) best = d;
+    }
+    return best;
   }
   function formatLastSubmitted(text, now) {
     const d = parseSubmittedDateTime(text);
@@ -1740,18 +1756,18 @@
     if (id) return 'id:' + id;
     return 'key:' + String(patient == null ? '' : patient);
   }
-  function teamsUnmatchedPatientLine(patient, day, detectedAt) {
+  function teamsUnmatchedPatientLine(patient, day, when) {
     const name = displayPatientName(patient) || '';
     const id = extractPatientId(patient);
     const who = id ? (name + ' (' + id + ')') : name;
-    const time = (day === 'yesterday' ? 'Yest. ' : '') + formatAlertClock(detectedAt);
-    return (who ? who + ' \u2014 flagged ' : 'flagged ') + time;
+    const stamp = formatAlertStamp(when);
+    return (who ? who + ' \u2014 ' : '') + stamp;
   }
   function teamsUnmatchedAlertLines(items, detectedAt) {
     const list = items || [];
     const lines = [teamsUnmatchedAlertText(list.length)];
     for (let i = 0; i < list.length; i++) {
-      lines.push(teamsUnmatchedPatientLine(list[i].patient, list[i].day, detectedAt));
+      lines.push(teamsUnmatchedPatientLine(list[i].patient, list[i].day, list[i].when || detectedAt));
     }
     return lines;
   }
@@ -1769,7 +1785,7 @@
           if (hash && seen[ident].hashes.indexOf(hash) === -1) seen[ident].hashes.push(hash);
           continue;
         }
-        const item = { patient: String(g.patient), day: day, hashes: hash ? [hash] : [] };
+        const item = { patient: String(g.patient), day: day, when: latestSubmittedDate(g), hashes: hash ? [hash] : [] };
         seen[ident] = item;
         patients.push(item);
       }
@@ -2117,7 +2133,7 @@
       teamsUnmatchedAlertText, teamsUnmatchedPatientLine, teamsUnmatchedAlertLines, unmatchedPatientIdentity,
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
       loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusNote,
-      alertWindowDates, isAlertDayKept, pruneAlertEntries, formatAlertClock,
+      alertWindowDates, isAlertDayKept, pruneAlertEntries, formatAlertClock, formatAlertStamp, latestSubmittedDate,
       AUTO_REFRESH_KEY, AUTO_REFRESH_MS, AUTO_REFRESH_RETRY_MS, AUTO_REFRESH_TYPING_MS,
       autoRefreshEnabled, setAutoRefreshEnabled, toggleAutoRefresh, startAutoRefresh, stopAutoRefresh,
       autoRefreshTick, autoRefreshRetryPending, shouldPostponeAutoRefresh, isUserActivelyTyping,
