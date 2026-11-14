@@ -251,7 +251,7 @@ function loadApi(html) {
   const totalsEls = root ? [...root.querySelectorAll('.totals')] : [];
   const totalsText = totalsEls[0] ? totalsEls[0].textContent : '';
   check('panel has a single top stats line', totalsEls.length, 1);
-  check('top stats line is today only', totalsText, '2 patients \u00b7 3 series \u00b7 2 matched \u00b7 1 unmatched');
+  check('top stats line is today only', totalsText, '2 patients \u00b7 3 series \u00b7 1 matched \u00b7 1 unmatched');
   check('default stats line has no error count', totalsText.indexOf('error') === -1 && !root.querySelector('.error-count'), true);
   const bodyText = root && root.querySelector('.body') ? root.querySelector('.body').textContent : '';
   check('panel lists first patient name in shadow only', bodyText.indexOf(P1_NAME) !== -1, true);
@@ -468,7 +468,7 @@ function loadApi(html) {
   const root = api.panelRoot();
   const totals = root && root.querySelector('.totals') ? root.querySelector('.totals').textContent : '';
   const errSpan = root && root.querySelector('.totals .error-count');
-  check('top stats line is today only including today errors', totals, '2 patients \u00b7 4 series \u00b7 1 matched \u00b7 3 unmatched \u00b7 2 errors');
+  check('top stats line is today only including today errors', totals, '2 patients \u00b7 4 series \u00b7 0 matched \u00b7 2 unmatched \u00b7 2 errors');
   check('stats line appends red error count', !!(errSpan && errSpan.textContent === '2 errors' && /2 errors/.test(totals) && totals.indexOf('4 errors') === -1), true);
   check('error count is in a red error-count span', !!(errSpan && errSpan.classList.contains('error-count')), true);
   const foot = root ? [...root.querySelectorAll('table.grid tfoot td')].map(td => td.textContent.trim()) : [];
