@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.25
+// @version      1.26
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.25 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.26 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.25';
-  const PANEL_TITLE = '0click 1.25';
+  const SCRIPT_VERSION = '1.26';
+  const PANEL_TITLE = '0click 1.26';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1776,12 +1776,19 @@
   function hashAlertKey(patient) {
     return sha256Hex('0click-unmatched|' + String(patient == null ? '' : patient));
   }
+  function hashMatchedAlertKey(patient) {
+    return sha256Hex('0click-matched|' + String(patient == null ? '' : patient));
+  }
   function isUnmatchedOnly(group) {
     return !!(group && group.unmatchedCount > 0 && group.matchedCount === 0);
   }
-  function teamsUnmatchedAlertText(n) {
-    return '0click: ' + n + ' new unmatched patient(s)';
+  function isMatchedAll(group) {
+    return !!(group && group.matchedCount > 0 && group.unmatchedCount === 0);
   }
+  const ALERT_KINDS = {
+    unmatched: { header: '0click: unmatched', qualifies: isUnmatchedOnly, hash: hashAlertKey },
+    matched: { header: '0click: matched', qualifies: isMatchedAll, hash: hashMatchedAlertKey }
+  };
   function unmatchedPatientIdentity(patient) {
     const id = extractPatientId(patient);
     if (id) return 'id:' + id;
@@ -1794,29 +1801,27 @@
     const stamp = formatAlertStamp(when);
     return (who ? who + ' \u2014 ' : '') + stamp;
   }
-  function teamsUnmatchedAlertLines(items, detectedAt) {
-    const list = items || [];
-    const lines = [teamsUnmatchedAlertText(list.length)];
-    for (let i = 0; i < list.length; i++) {
-      lines.push(teamsUnmatchedPatientLine(list[i].patient, list[i].day, list[i].when || detectedAt));
-    }
-    return lines;
+  function teamsPatientAlertLines(item, detectedAt) {
+    const kind = ALERT_KINDS[item && item.kind] || ALERT_KINDS.unmatched;
+    return [kind.header, teamsUnmatchedPatientLine(item && item.patient, item && item.day, (item && item.when) || detectedAt)];
   }
-  function unmatchedOnlyPatients(todaySummary, yesterdaySummary) {
+  function alertPatients(todaySummary, yesterdaySummary, kindName) {
+    const kindKey = ALERT_KINDS[kindName] ? kindName : 'unmatched';
+    const kind = ALERT_KINDS[kindKey];
     const seen = Object.create(null);
     const patients = [];
     function addFrom(summary, day) {
       const groups = (summary && summary.groups) || [];
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i];
-        if (!isUnmatchedOnly(g) || !g.patient) continue;
+        if (!kind.qualifies(g) || !g.patient) continue;
         const ident = unmatchedPatientIdentity(g.patient);
-        const hash = hashAlertKey(g.patient);
+        const hash = kind.hash(g.patient);
         if (seen[ident]) {
           if (hash && seen[ident].hashes.indexOf(hash) === -1) seen[ident].hashes.push(hash);
           continue;
         }
-        const item = { patient: String(g.patient), day: day, when: latestSubmittedDate(g), hashes: hash ? [hash] : [] };
+        const item = { kind: kindKey, patient: String(g.patient), day: day, when: latestSubmittedDate(g), hashes: hash ? [hash] : [] };
         seen[ident] = item;
         patients.push(item);
       }
@@ -1824,6 +1829,12 @@
     addFrom(todaySummary, 'today');
     addFrom(yesterdaySummary, 'yesterday');
     return patients;
+  }
+  function unmatchedOnlyPatients(todaySummary, yesterdaySummary) {
+    return alertPatients(todaySummary, yesterdaySummary, 'unmatched');
+  }
+  function matchedAllPatients(todaySummary, yesterdaySummary) {
+    return alertPatients(todaySummary, yesterdaySummary, 'matched');
   }
   function alertWindowDates(now) {
     const range = lastTwoDayRange(now || nowFn());
@@ -1948,7 +1959,8 @@
     const stored = loadAlerted(now);
     const known = Object.create(null);
     for (let i = 0; i < stored.entries.length; i++) known[stored.entries[i].h] = true;
-    const patients = unmatchedOnlyPatients(todaySummary, yesterdaySummary);
+    const patients = unmatchedOnlyPatients(todaySummary, yesterdaySummary)
+      .concat(matchedAllPatients(todaySummary, yesterdaySummary));
     const fresh = [];
     let waiting = 0;
     let soonestWaitMs = null;
@@ -1974,38 +1986,61 @@
       const hashes = fresh[i].hashes || [];
       for (let j = 0; j < hashes.length; j++) teamsAlertPending[hashes[j]] = true;
     }
-    const lines = teamsUnmatchedAlertLines(fresh, now);
-    return sendTeams(lines).then(function (result) {
-      lastAlertAttempt = {
-        sent: !!(result && result.sent),
-        status: result && result.status != null ? Number(result.status) : 0,
-        reason: result && result.reason ? String(result.reason) : '',
-        at: nowFn()
-      };
-      if (result && result.sent) {
-        const next = loadAlerted(now);
-        const seen = Object.create(null);
-        for (let i = 0; i < next.entries.length; i++) seen[next.entries[i].h] = true;
-        const entries = next.entries.slice();
-        for (let i = 0; i < fresh.length; i++) {
-          const hashes = fresh[i].hashes || [];
+    const summary = { sent: false, sentCount: 0, failedCount: 0, status: 0, reason: '', waiting: waiting };
+    let lastFailure = null;
+    function sendOne(item) {
+      const lines = teamsPatientAlertLines(item, now);
+      let req;
+      try {
+        req = Promise.resolve(sendTeams(lines));
+      } catch (err) {
+        req = Promise.reject(err);
+      }
+      return req.then(null, function (err) {
+        return { sent: false, status: 0, reason: 'blocked/network', error: String(err && err.message || err) };
+      }).then(function (result) {
+        lastAlertAttempt = {
+          sent: !!(result && result.sent),
+          status: result && result.status != null ? Number(result.status) : 0,
+          reason: result && result.reason ? String(result.reason) : '',
+          at: nowFn()
+        };
+        const hashes = item.hashes || [];
+        if (result && result.sent) {
+          const next = loadAlerted(nowFn());
+          const seen = Object.create(null);
+          for (let i = 0; i < next.entries.length; i++) seen[next.entries[i].h] = true;
+          const entries = next.entries.slice();
           for (let j = 0; j < hashes.length; j++) {
             if (seen[hashes[j]]) continue;
             seen[hashes[j]] = true;
             entries.push({ h: hashes[j], day: todayDate });
           }
+          saveAlerted({ entries: entries });
+          summary.sentCount++;
+          summary.sent = true;
+        } else {
+          summary.failedCount++;
+          lastFailure = result;
         }
-        saveAlerted({ entries: entries });
+        for (let j = 0; j < hashes.length; j++) delete teamsAlertPending[hashes[j]];
+        summary.status = lastAlertAttempt.status;
+        summary.reason = lastAlertAttempt.reason;
+      });
+    }
+    // One card per patient, sent one after another (never in parallel).
+    let chain = sendOne(fresh[0]);
+    for (let i = 1; i < fresh.length; i++) {
+      const item = fresh[i];
+      chain = chain.then(function () { return sendOne(item); });
+    }
+    return chain.then(function () {
+      if (lastFailure && lastFailure.reason !== 'no-url' && lastFailure.reason !== 'none' && lastFailure.reason !== 'disabled') {
+        showTeamsNote(teamsAlertStatusNote(lastFailure));
+      } else if (summary.sentCount) {
         showTeamsNote('Teams alert sent');
       }
-      for (let i = 0; i < fresh.length; i++) {
-        const hashes = fresh[i].hashes || [];
-        for (let j = 0; j < hashes.length; j++) delete teamsAlertPending[hashes[j]];
-      }
-      if (result && !result.sent && result.reason !== 'no-url' && result.reason !== 'none' && result.reason !== 'disabled') {
-        showTeamsNote(teamsAlertStatusNote(result));
-      }
-      return result;
+      return summary;
     });
   }
   function resetTeamsAlertState() {
@@ -2014,7 +2049,8 @@
     clearAlertGraceTimer();
   }
   let lastAlertAttempt = null;
-  function countQualifying(summary, known, now) {
+  function countQualifying(summary, known, now, kindName) {
+    const kind = ALERT_KINDS[kindName] || ALERT_KINDS.unmatched;
     const groups = (summary && summary.groups) || [];
     const when = now || nowFn();
     let total = 0;
@@ -2022,9 +2058,9 @@
     let waiting = 0;
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i];
-      if (!isUnmatchedOnly(g) || !g.patient) continue;
+      if (!kind.qualifies(g) || !g.patient) continue;
       total++;
-      if (known[hashAlertKey(g.patient)]) sent++;
+      if (known[kind.hash(g.patient)]) sent++;
       else if (isAlertTooYoung(latestSubmittedDate(g), when)) waiting++;
     }
     return { total: total, sent: sent, waiting: waiting };
@@ -2035,8 +2071,12 @@
     const stored = loadAlerted(when);
     const known = Object.create(null);
     for (let i = 0; i < stored.entries.length; i++) known[stored.entries[i].h] = true;
-    const t = countQualifying(summarizeDay(info.rows, 'today', when), known, when);
-    const y = countQualifying(summarizeDay(info.rows, 'yesterday', when), known, when);
+    const todaySum = summarizeDay(info.rows, 'today', when);
+    const yestSum = summarizeDay(info.rows, 'yesterday', when);
+    const t = countQualifying(todaySum, known, when, 'unmatched');
+    const y = countQualifying(yestSum, known, when, 'unmatched');
+    const tm = countQualifying(todaySum, known, when, 'matched');
+    const ym = countQualifying(yestSum, known, when, 'matched');
     let last = 'never attempted';
     if (lastAlertAttempt) {
       last = (lastAlertAttempt.sent ? 'sent' : 'failed') +
@@ -2048,9 +2088,10 @@
       'Teams alerts: ' + (teamsAlertsEnabled() ? 'on' : 'off'),
       'Webhook URL: ' + (getTeamsWebhook() ? 'saved' : 'not set'),
       'Data source: ' + info.source + (info.state ? ' (' + info.state + ')' : ''),
-      'Today qualifying: ' + t.total + ' (already sent: ' + t.sent + ')',
-      'Yesterday qualifying: ' + y.total + ' (already sent: ' + y.sent + ')',
-      'Waiting (<3 min): ' + (t.waiting + y.waiting),
+      'Unmatched today: ' + t.total + ' (sent: ' + t.sent + ', waiting <3 min: ' + t.waiting + ')',
+      'Unmatched yesterday: ' + y.total + ' (sent: ' + y.sent + ', waiting <3 min: ' + y.waiting + ')',
+      'Matched today: ' + tm.total + ' (sent: ' + tm.sent + ', waiting <3 min: ' + tm.waiting + ')',
+      'Matched yesterday: ' + ym.total + ' (sent: ' + ym.sent + ', waiting <3 min: ' + ym.waiting + ')',
       'Stored alert entries: ' + stored.entries.length,
       'Last send (this page load): ' + last
     ].join('\n');
@@ -2228,7 +2269,7 @@
       sendTeams, sendTeamsTest, teamsStatusNote, promptSetTeamsWebhook, registerTeamsMenu,
       webhookTail, teamsWebhookPromptMessage, teamsRequestUrl, teamsErrorDetail, TEAMS_TIMEOUT_MS,
       TEAMS_ALERTED_KEY, TEAMS_ALERTS_ENABLED_KEY, sha256Hex, hashAlertKey, isUnmatchedOnly,
-      teamsUnmatchedAlertText, teamsUnmatchedPatientLine, teamsUnmatchedAlertLines, unmatchedPatientIdentity,
+      teamsUnmatchedPatientLine, teamsPatientAlertLines, unmatchedPatientIdentity, hashMatchedAlertKey, isMatchedAll, matchedAllPatients, alertPatients,
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
       loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusText, teamsAlertStatusNote,
       ALERT_GRACE_MS, isAlertTooYoung, clearAlertGraceTimer, getAlertGraceTimer: function () { return alertGraceTimer; },

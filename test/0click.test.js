@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.25', /@version\s+1\.25\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.25'/.test(src), true);
-check('script header comment 0click 1.25', /\/\/ 0click 1\.25\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.25'/.test(src), true);
+check('script @version 1.26', /@version\s+1\.26\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.26'/.test(src), true);
+check('script header comment 0click 1.26', /\/\/ 0click 1\.26\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.26'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -41,7 +41,7 @@ check('jobs/page requests stay GET only', /method:\s*'GET'/.test(src) && !/metho
 check('POST is only used for the Teams webhook', (src.match(/method:\s*['"]POST['"]/g) || []).length === 1 && /function sendTeams/.test(src), true);
 check('no hardcoded Teams webhook URL', !/https:\/\/[^\s'"]*(logic\.azure\.com|webhook\.office\.com|powerplatform\.com)/.test(src), true);
 check('Teams test message has no patient data', /const TEAMS_TEST_MESSAGE = '0click test OK'/.test(src), true);
-check('sendTeams is only used for the test menu and unmatched alerts', (src.match(/sendTeams\(/g) || []).length === 3 && src.indexOf('sendTeams(TEAMS_TEST_MESSAGE)') !== -1 && src.indexOf('sendTeams(lines)') !== -1 && /function maybeAlertNewUnmatched/.test(src) && /function teamsUnmatchedAlertText/.test(src) && src.indexOf("'0click: ' + n + ' new unmatched patient(s)'") !== -1 && /function teamsUnmatchedAlertLines/.test(src) && /function teamsUnmatchedPatientLine/.test(src), true);
+check('sendTeams is only used for the test menu and patient alerts', (src.match(/sendTeams\(/g) || []).length === 3 && src.indexOf('sendTeams(TEAMS_TEST_MESSAGE)') !== -1 && src.indexOf('sendTeams(lines)') !== -1 && /function maybeAlertNewUnmatched/.test(src) && src.indexOf("header: '0click: unmatched'") !== -1 && src.indexOf("header: '0click: matched'") !== -1 && /function teamsPatientAlertLines/.test(src) && /function teamsUnmatchedPatientLine/.test(src) && src.indexOf('new unmatched patient(s)') === -1, true);
 check('auto-alert does not log card text, names, or IDs', src.indexOf('log(lines)') === -1 && src.indexOf('debug(lines)') === -1 && src.indexOf('console.log(lines)') === -1 && src.indexOf('log(text)') === -1 && /showTeamsNote\('Teams alert sent'\)/.test(src) && /function teamsAlertStatusNote/.test(src), true);
 
 check('alert lines use M/D HH:MM with no flagged or Yest.', /function formatAlertStamp/.test(src) && src.indexOf('flagged') === -1 && src.indexOf('Yest.') === -1, true);
@@ -243,7 +243,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.25', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.25'), true);
+  check('panel title is 0click 1.26', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.26'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -839,10 +839,10 @@ function runTeamsTests() {
     check('Teams alert status shows on/off and webhook saved', /Teams alerts: (on|off)/.test(statusText) && statusText.indexOf('Webhook URL: saved') !== -1, true);
     check('Teams alert status says never attempted before any alert', statusText.indexOf('never attempted') !== -1, true);
     check('Teams alert status has no webhook URL', statusText.indexOf(FAKE_HOOK) === -1, true);
-    return api.sendTeamsTest();
+    return settle().then(function () { return api.sendTeamsTest(); });
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
-    check('Teams test posts the fixed test message only', window.__zclickGmRequests.length, 1);
+    check('Teams test posts the fixed test message only', window.__zclickGmRequests.filter(function (r) { return alertTextFromRequest(r) === '0click test OK'; }).length, 1);
     check('Teams test failed note shows the HTTP status only', note, 'Teams test failed (403)');
     check('Teams test note has no webhook URL', note.indexOf('example.invalid') === -1 && note.indexOf(FAKE_HOOK) === -1, true);
     check('Teams test note has no patient data', note.indexOf('DOE') === -1 && note.indexOf('000000') === -1, true);
@@ -850,7 +850,7 @@ function runTeamsTests() {
     window.__zclickGmRequests = [];
     window.__zclickGmStatus = 202;
     window.__zclickGmError = false;
-    return api.sendTeamsTest();
+    return settle().then(function () { return api.sendTeamsTest(); });
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
     check('Teams test OK note', note, 'Teams test OK');
@@ -860,7 +860,7 @@ function runTeamsTests() {
     window.__zclickGmRequests = [];
     window.__zclickGmMode = 'error';
     window.__zclickGmErrorRes = { status: 0, error: 'Refused to connect to https://example.invalid/teams-webhook because it is not in @connect' };
-    return api.sendTeamsTest();
+    return settle().then(function () { return api.sendTeamsTest(); });
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
     check('onerror note uses blocked/network reason', note.indexOf('Teams test failed (blocked/network: ') === 0, true);
@@ -870,7 +870,7 @@ function runTeamsTests() {
     check('onerror note mentions the short error', /because it is not in @connect/.test(note), true);
     window.__zclickGmRequests = [];
     window.__zclickGmMode = 'timeout';
-    return api.sendTeamsTest();
+    return settle().then(function () { return api.sendTeamsTest(); });
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
     check('timeout note', note, 'Teams test failed (timeout)');
@@ -944,6 +944,10 @@ function alertedHashes(windowObj) {
   return alertedEntries(windowObj).map(function (e) { return e.h; }).sort();
 }
 
+function settle() {
+  return new Promise(function (resolve) { setTimeout(resolve, 0); });
+}
+
 function runTeamsAlertTests() {
   const FAKE_HOOK = 'https://example.invalid/teams-webhook';
   const P_ORANGE = 'ORANGE, FAKE (555555)';
@@ -961,8 +965,7 @@ function runTeamsAlertTests() {
   const SERIES_MARKERS = ['CT HEAD', 'CT ABDOMEN', 'CT PELVIS', 'CT NECK', '13:00:00', '09:00:00', '12:00:00', '13:10:00'];
   const PHI_MARKERS = NAME_MARKERS.concat(SERIES_MARKERS);
   const todayOnlyHtml = jobsTableFromRows([
-    jobRowHtml('Transferred', '-', P_ORANGE, 'KP_ROS', 'CT HEAD', '2026-11-12 13:00:00'),
-    jobRowHtml('Completed', 'Prostate', P_GREEN, 'KP_ROS', 'CT PELVIS', '2026-11-12 12:00:00')
+    jobRowHtml('Transferred', '-', P_ORANGE, 'KP_ROS', 'CT HEAD', '2026-11-12 13:00:00')
   ]);
   const yesterdayOnlyHtml = jobsTableFromRows([
     jobRowHtml('Transferred', '-', P_AMBER, 'KP_ROS', 'CT ABDOMEN', '2026-11-11 09:00:00')
@@ -999,18 +1002,24 @@ function runTeamsAlertTests() {
   check('alert hash is a 64-char hex digest', /^[0-9a-f]{64}$/.test(hashed), true);
   check('alert hash does not contain the patient key', hasPhiLeak(hashed, PHI_MARKERS), false);
   check('alert hash does not include the date', hashed !== hashApi.sha256Hex('0click-unmatched|2026-11-12|' + P_ORANGE), true);
-  check('unmatched alert text for 1', hashApi.teamsUnmatchedAlertText(1), '0click: 1 new unmatched patient(s)');
-  check('unmatched alert text for 2', hashApi.teamsUnmatchedAlertText(2), '0click: 2 new unmatched patient(s)');
+  const mHashed = hashApi.hashMatchedAlertKey(P_ORANGE);
+  check('matched hash uses its own prefix', mHashed, hashApi.sha256Hex('0click-matched|' + P_ORANGE));
+  check('matched hash differs from the unmatched hash', mHashed !== hashed, true);
+  check('unmatched hash prefix is unchanged', hashed, hashApi.sha256Hex('0click-unmatched|' + P_ORANGE));
+  check('isMatchedAll when every series matched', hashApi.isMatchedAll({ unmatchedCount: 0, matchedCount: 2 }), true);
+  check('isMatchedAll is false with any unmatched', hashApi.isMatchedAll({ unmatchedCount: 1, matchedCount: 1 }), false);
+  check('isMatchedAll is false with nothing matched', hashApi.isMatchedAll({ unmatchedCount: 0, matchedCount: 0 }), false);
   check('today patient line uses name, ID, and M/D HH:MM', hashApi.teamsUnmatchedPatientLine(P_ORANGE, 'today', new Date(2026, 10, 12, 13, 0, 0)), todayLine(P_ORANGE));
   check('yesterday patient line uses M/D HH:MM without Yest.', hashApi.teamsUnmatchedPatientLine(P_AMBER, 'yesterday', new Date(2026, 10, 11, 9, 0, 0)), yestLine(P_AMBER));
   check('alert stamp matches M/D HH:MM example', hashApi.formatAlertStamp(new Date(2026, 10, 13, 12, 19, 0)), '11/13 12:19');
   check('alert stamp does not zero-pad the month or day', hashApi.formatAlertStamp(new Date(2026, 0, 5, 9, 5, 0)), '1/5 09:05');
   check('alert clock is local HH:MM', hashApi.formatAlertClock(NOW), '15:00');
-  const built = hashApi.teamsUnmatchedAlertLines([{ patient: P_ORANGE, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }], NOW);
-  check('alert lines start with the unchanged count line', built[0], '0click: 1 new unmatched patient(s)');
-  check('alert lines then list the unique patient once', built, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+  const built = hashApi.teamsPatientAlertLines({ kind: 'unmatched', patient: P_ORANGE, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }, NOW);
+  check('unmatched card is header plus one patient line', built, ['0click: unmatched', todayLine(P_ORANGE)]);
+  const builtM = hashApi.teamsPatientAlertLines({ kind: 'matched', patient: P_GREEN, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }, NOW);
+  check('matched card is header plus one patient line', builtM, ['0click: matched', todayLine(P_GREEN)]);
   const quoted = 'QUOTE, "FAKE" (ABC-1)';
-  const quotedLines = hashApi.teamsUnmatchedAlertLines([{ patient: quoted, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }], NOW);
+  const quotedLines = hashApi.teamsPatientAlertLines({ kind: 'unmatched', patient: quoted, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }, NOW);
   const quotedJson = JSON.stringify(hashApi.teamsPayload(quotedLines));
   check('patient lines stay valid JSON after stringify', JSON.parse(quotedJson).attachments[0].content.body[1].text, quoted + ' ' + DASH + ' ' + TODAY_STAMP);
   check('Teams alerts default on', hashApi.teamsAlertsEnabled(), true);
@@ -1026,11 +1035,11 @@ function runTeamsAlertTests() {
   first.window.__zclickGmStatus = 202;
   first.window.__zclickGmMode = 'load';
   first.api.addPanel();
-  return Promise.resolve().then(function () {
+  return settle().then(function () {
     check('new today unmatched-only patient sends once', first.window.__zclickGmRequests.length, 1);
     const lines = alertLinesFromRequest(first.window.__zclickGmRequests[0]);
-    check('auto-alert first line is the count-only template', lines[0], '0click: 1 new unmatched patient(s)');
-    check('auto-alert lists the fake name, ID, and time once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+    check('auto-alert first line is the count-only template', lines[0], '0click: unmatched');
+    check('auto-alert lists the fake name, ID, and time once', lines, ['0click: unmatched', todayLine(P_ORANGE)]);
     check('auto-alert card has no series or job-time text', hasPhiLeak(lines.join('\n'), SERIES_MARKERS), false);
     check('auto-alert card uses wrapping TextBlocks', allAlertBlocksWrap(first.window.__zclickGmRequests[0]), true);
     const raw = storedAlerted(first.window);
@@ -1043,21 +1052,28 @@ function runTeamsAlertTests() {
     check('success note has no patient data', hasPhiLeak(note, PHI_MARKERS), false);
     first.window.__zclickGmRequests = [];
     first.api.renderBody();
-    return Promise.resolve();
+    return settle();
   }).then(function () {
     check('repeated refresh does not resend', first.window.__zclickGmRequests.length, 0);
     first.api.setApiRowsForTest([
       { patient: P_ORANGE, workflow: 'KP_ROS', template: 'Head and Neck', series: 'CT HEAD', submitted: '2026-11-12 13:00:00', status: 'Completed' }
     ], '/api/jobs');
     first.api.renderBody();
-    return Promise.resolve();
+    return settle();
   }).then(function () {
-    check('gaining a match does not send', first.window.__zclickGmRequests.length, 0);
+    check('unmatched patient becoming fully matched sends one matched card', first.window.__zclickGmRequests.length, 1);
+    check('transition card is the matched header plus the patient line', alertLinesFromRequest(first.window.__zclickGmRequests[0]), ['0click: matched', todayLine(P_ORANGE)]);
+    check('transition stores the matched hash next to the unmatched hash', alertedHashes(first.window), [first.api.hashAlertKey(P_ORANGE), first.api.hashMatchedAlertKey(P_ORANGE)].sort());
+    first.window.__zclickGmRequests = [];
+    first.api.renderBody();
+    return settle();
+  }).then(function () {
+    check('matched patient is not re-sent on the next refresh', first.window.__zclickGmRequests.length, 0);
     first.api.setApiRowsForTest([
       { patient: P_ORANGE, workflow: 'KP_ROS', template: '-', series: 'CT HEAD', submitted: '2026-11-12 13:00:00', status: 'Transferred' }
     ], '/api/jobs');
     first.api.renderBody();
-    return Promise.resolve();
+    return settle();
   }).then(function () {
     check('losing a match later the same day does not re-alert', first.window.__zclickGmRequests.length, 0);
 
@@ -1066,11 +1082,11 @@ function runTeamsAlertTests() {
     yest.window.__zclickGmRequests = [];
     yest.window.__zclickGmStatus = 202;
     yest.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       check('yesterday unmatched-only rows trigger one send', yest.window.__zclickGmRequests.length, 1);
       const lines = alertLinesFromRequest(yest.window.__zclickGmRequests[0]);
-      check('yesterday alert first line is the count-only template', lines[0], '0click: 1 new unmatched patient(s)');
-      check('yesterday alert lists the fake name, ID, and M/D HH:MM once', lines, ['0click: 1 new unmatched patient(s)', yestLine(P_AMBER)]);
+      check('yesterday alert first line is the count-only template', lines[0], '0click: unmatched');
+      check('yesterday alert lists the fake name, ID, and M/D HH:MM once', lines, ['0click: unmatched', yestLine(P_AMBER)]);
       check('yesterday alert card has no series or job-time text', hasPhiLeak(lines.join('\n'), SERIES_MARKERS), false);
       check('yesterday alert storage has no patient data', hasPhiLeak(storedAlerted(yest.window), PHI_MARKERS), false);
       check('yesterday alert is stored with today as the alert day', alertedEntries(yest.window), [{ h: yest.api.hashAlertKey(P_AMBER), day: '2026-11-12' }]);
@@ -1080,7 +1096,7 @@ function runTeamsAlertTests() {
         { patient: P_AMBER, workflow: 'KP_ROS', template: '-', series: 'CT HEAD', submitted: '2026-11-12 13:00:00', status: 'Transferred' }
       ], '/api/jobs');
       yest.api.renderBody();
-      return Promise.resolve();
+      return settle();
     }).then(function () {
       check('same patient across yesterday to today is not re-alerted', yest.window.__zclickGmRequests.length, 0);
     });
@@ -1091,19 +1107,23 @@ function runTeamsAlertTests() {
     across.window.__zclickGmRequests = [];
     across.window.__zclickGmStatus = 202;
     across.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       check('a patient alerted yesterday is not re-alerted today', across.window.__zclickGmRequests.length, 0);
       check('yesterday alert date is preserved', alertedEntries(across.window), [{ h: across.api.hashAlertKey(P_ORANGE), day: '2026-11-11' }]);
       across.api.setApiRowsForTest([
         { patient: P_ORANGE, workflow: 'KP_ROS', template: 'Head and Neck', series: 'CT HEAD', submitted: '2026-11-12 10:00:00', status: 'Completed' }
       ], '/api/jobs');
+      across.window.__zclickGmRequests = [];
       across.api.renderBody();
+      return settle();
+    }).then(function () {
+      check('fully matched after a yesterday unmatched alert sends one matched card', across.window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: matched', todayLine(P_ORANGE, '11/12 10:00')]]);
       across.api.setApiRowsForTest([
         { patient: P_ORANGE, workflow: 'KP_ROS', template: '-', series: 'CT HEAD', submitted: '2026-11-12 13:00:00', status: 'Transferred' }
       ], '/api/jobs');
       across.window.__zclickGmRequests = [];
       across.api.renderBody();
-      return Promise.resolve();
+      return settle();
     }).then(function () {
       check('match then unmatch after a yesterday alert still does not re-alert', across.window.__zclickGmRequests.length, 0);
     });
@@ -1114,7 +1134,7 @@ function runTeamsAlertTests() {
     off.window.__zclickGmRequests = [];
     off.window.__zclickGmStatus = 202;
     off.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       check('toggle off disables auto-alerts', off.window.__zclickGmRequests.length, 0);
       check('toggle off leaves alert storage empty', storedAlerted(off.window), '');
       check('teamsAlertsEnabled is false after toggle off', off.api.teamsAlertsEnabled(), false);
@@ -1123,11 +1143,11 @@ function runTeamsAlertTests() {
       check('toggle back on shows a panel note', note, 'Teams alerts on');
       off.window.__zclickGmRequests = [];
       off.api.renderBody();
-      return Promise.resolve().then(function () {
+      return settle().then(function () {
         const lines = alertLinesFromRequest(off.window.__zclickGmRequests[0]);
         check('toggle on then refresh sends the missed alert once', off.window.__zclickGmRequests.length, 1);
-        check('re-enabled alert first line is the count-only template', lines[0], '0click: 1 new unmatched patient(s)');
-        check('re-enabled alert lists the fake name, ID, and time once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+        check('re-enabled alert first line is the count-only template', lines[0], '0click: unmatched');
+        check('re-enabled alert lists the fake name, ID, and time once', lines, ['0click: unmatched', todayLine(P_ORANGE)]);
       });
     });
   }).then(function () {
@@ -1136,12 +1156,11 @@ function runTeamsAlertTests() {
     two.window.__zclickGmRequests = [];
     two.window.__zclickGmStatus = 202;
     two.api.addPanel();
-    return Promise.resolve().then(function () {
-      const lines = alertLinesFromRequest(two.window.__zclickGmRequests[0]);
-      check('two new unmatched patients send one batched message', two.window.__zclickGmRequests.length, 1);
-      check('batched alert first line uses N=2', lines[0], '0click: 2 new unmatched patient(s)');
-      check('batched alert lists each unique patient once', lines, ['0click: 2 new unmatched patient(s)', todayLine(P_ORANGE), todayLine(P_AMBER, TODAY_STAMP_AMBER)]);
-      check('batched alert card has no series or job-time text', hasPhiLeak(lines.join('\n'), SERIES_MARKERS), false);
+    return settle().then(function () {
+      const cards = two.window.__zclickGmRequests.map(alertLinesFromRequest);
+      check('two new unmatched patients send two separate messages', two.window.__zclickGmRequests.length, 2);
+      check('each patient gets its own card in order', cards, [['0click: unmatched', todayLine(P_ORANGE)], ['0click: unmatched', todayLine(P_AMBER, TODAY_STAMP_AMBER)]]);
+      check('per-patient cards have no series or job-time text', hasPhiLeak(cards.join('\n'), SERIES_MARKERS), false);
       const expected = [two.api.hashAlertKey(P_ORANGE), two.api.hashAlertKey(P_AMBER)].sort();
       check('batched storage has two hashes and no PHI', alertedHashes(two.window), expected);
       check('batched storage string has no patient data', hasPhiLeak(storedAlerted(two.window), PHI_MARKERS), false);
@@ -1152,12 +1171,11 @@ function runTeamsAlertTests() {
     mixed.window.__zclickGmRequests = [];
     mixed.window.__zclickGmStatus = 202;
     mixed.api.addPanel();
-    return Promise.resolve().then(function () {
-      const lines = alertLinesFromRequest(mixed.window.__zclickGmRequests[0]);
-      check('today plus yesterday unmatched send one batched message', mixed.window.__zclickGmRequests.length, 1);
-      check('mixed-window alert first line uses N=2', lines[0], '0click: 2 new unmatched patient(s)');
-      check('mixed-window alert lists today then yesterday once', lines, ['0click: 2 new unmatched patient(s)', todayLine(P_ORANGE), yestLine(P_AMBER)]);
-      check('matched patients in the window are not stored', alertedHashes(mixed.window), [mixed.api.hashAlertKey(P_ORANGE), mixed.api.hashAlertKey(P_AMBER)].sort());
+    return settle().then(function () {
+      const cards = mixed.window.__zclickGmRequests.map(alertLinesFromRequest);
+      check('mixed window sends one card per patient', mixed.window.__zclickGmRequests.length, 3);
+      check('mixed-window cards: unmatched today, unmatched yesterday, then matched', cards, [['0click: unmatched', todayLine(P_ORANGE)], ['0click: unmatched', yestLine(P_AMBER)], ['0click: matched', todayLine(P_GREEN, '11/12 12:00')]]);
+      check('mixed-window storage has both kinds of hashes', alertedHashes(mixed.window), [mixed.api.hashAlertKey(P_ORANGE), mixed.api.hashAlertKey(P_AMBER), mixed.api.hashMatchedAlertKey(P_GREEN)].sort());
     });
   }).then(function () {
     const multi = loadApi(multiSeriesHtml);
@@ -1165,11 +1183,11 @@ function runTeamsAlertTests() {
     multi.window.__zclickGmRequests = [];
     multi.window.__zclickGmStatus = 202;
     multi.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       const lines = alertLinesFromRequest(multi.window.__zclickGmRequests[0]);
       check('multiple series for one patient send once', multi.window.__zclickGmRequests.length, 1);
-      check('multiple series still use N=1', lines[0], '0click: 1 new unmatched patient(s)');
-      check('multiple series list the unique patient once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE, TODAY_STAMP_LATE)]);
+      check('multiple series still use N=1', lines[0], '0click: unmatched');
+      check('multiple series list the unique patient once', lines, ['0click: unmatched', todayLine(P_ORANGE, TODAY_STAMP_LATE)]);
       check('multiple-series storage has one hash', alertedHashes(multi.window), [multi.api.hashAlertKey(P_ORANGE)]);
     });
   }).then(function () {
@@ -1178,11 +1196,11 @@ function runTeamsAlertTests() {
     same.window.__zclickGmRequests = [];
     same.window.__zclickGmStatus = 202;
     same.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       const lines = alertLinesFromRequest(same.window.__zclickGmRequests[0]);
       check('same patient ID across two keys sends once', same.window.__zclickGmRequests.length, 1);
-      check('same patient ID still uses N=1', lines[0], '0click: 1 new unmatched patient(s)');
-      check('same patient ID is listed once under the first key', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+      check('same patient ID still uses N=1', lines[0], '0click: unmatched');
+      check('same patient ID is listed once under the first key', lines, ['0click: unmatched', todayLine(P_ORANGE)]);
       check('same-ID card does not repeat the second key name', lines.filter(function (l) { return l.indexOf(P_ORANGE_ALT) !== -1; }).length, 0);
       const stored = alertedHashes(same.window);
       const hashes = [same.api.hashAlertKey(P_ORANGE), same.api.hashAlertKey(P_ORANGE_ALT)].sort();
@@ -1194,9 +1212,16 @@ function runTeamsAlertTests() {
     matched.window.__zclickGmRequests = [];
     matched.window.__zclickGmStatus = 202;
     matched.api.addPanel();
-    return Promise.resolve().then(function () {
-      check('matched patients do not trigger an alert', matched.window.__zclickGmRequests.length, 0);
-      check('matched-only refresh does not store alert hashes', storedAlerted(matched.window), '');
+    return settle().then(function () {
+      const cards = matched.window.__zclickGmRequests.map(alertLinesFromRequest);
+      check('fully matched patients each get a matched card; partly matched do not', cards, [['0click: matched', todayLine(P_GREEN, '11/12 12:00')], ['0click: matched', yestLine(P_AMBER)]]);
+      check('matched storage has only matched hashes', alertedHashes(matched.window), [matched.api.hashMatchedAlertKey(P_GREEN), matched.api.hashMatchedAlertKey(P_AMBER)].sort());
+      check('matched storage has no patient data', hasPhiLeak(storedAlerted(matched.window), PHI_MARKERS), false);
+      matched.window.__zclickGmRequests = [];
+      matched.api.renderBody();
+      return settle().then(function () {
+        check('matched cards are not re-sent on refresh', matched.window.__zclickGmRequests.length, 0);
+      });
     });
   }).then(function () {
     const prune = loadApi(todayOnlyHtml);
@@ -1213,11 +1238,11 @@ function runTeamsAlertTests() {
     prune.window.__zclickGmRequests = [];
     prune.window.__zclickGmStatus = 202;
     prune.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       const lines = alertLinesFromRequest(prune.window.__zclickGmRequests[0]);
       check('a pruned old entry can alert once if the patient is unmatched again', prune.window.__zclickGmRequests.length, 1);
-      check('pruned-then-alerted first line is the count-only template', lines[0], '0click: 1 new unmatched patient(s)');
-      check('pruned-then-alerted lists the fake name, ID, and time once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+      check('pruned-then-alerted first line is the count-only template', lines[0], '0click: unmatched');
+      check('pruned-then-alerted lists the fake name, ID, and time once', lines, ['0click: unmatched', todayLine(P_ORANGE)]);
       const entries = alertedEntries(prune.window).slice().sort(function (a, b) { return a.h < b.h ? -1 : a.h > b.h ? 1 : 0; });
       const expected = [
         { h: keepHash, day: '2026-11-11' },
@@ -1232,7 +1257,7 @@ function runTeamsAlertTests() {
     fail.window.__zclickGmRequests = [];
     fail.window.__zclickGmStatus = 403;
     fail.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       check('failed auto-alert still attempts one send', fail.window.__zclickGmRequests.length, 1);
       const note = ((fail.api.panelRoot() && fail.api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
       check('failed auto-alert shows a generic failure note', note, 'Teams alert failed (403)');
@@ -1243,7 +1268,7 @@ function runTeamsAlertTests() {
       fail.window.__zclickGmRequests = [];
       fail.window.__zclickGmStatus = 202;
       fail.api.renderBody();
-      return Promise.resolve().then(function () {
+      return settle().then(function () {
         check('a later successful refresh retries after failure', fail.window.__zclickGmRequests.length, 1);
         check('retry stores the hash after success', alertedEntries(fail.window), [{ h: fail.api.hashAlertKey(P_ORANGE), day: '2026-11-12' }]);
         const okNote = ((fail.api.panelRoot() && fail.api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
@@ -1257,10 +1282,10 @@ function runTeamsAlertTests() {
     legacy.window.__zclickGmRequests = [];
     legacy.window.__zclickGmStatus = 202;
     legacy.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       const lines = alertLinesFromRequest(legacy.window.__zclickGmRequests[0]);
       check('legacy v1.17 storage is ignored and may alert once', legacy.window.__zclickGmRequests.length, 1);
-      check('legacy-migrated alert lists the unique patient once', lines, ['0click: 1 new unmatched patient(s)', todayLine(P_ORANGE)]);
+      check('legacy-migrated alert lists the unique patient once', lines, ['0click: unmatched', todayLine(P_ORANGE)]);
       const saved = JSON.parse(storedAlerted(legacy.window) || '{}');
       check('legacy storage is migrated to v2 entries', saved.v, 2);
       check('legacy hashes are not kept', saved.entries, [{ h: legacy.api.hashAlertKey(P_ORANGE), day: '2026-11-12' }]);
@@ -1270,7 +1295,7 @@ function runTeamsAlertTests() {
     const none = loadApi(todayOnlyHtml);
     none.window.__zclickGmRequests = [];
     none.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       check('no webhook means no auto-alert request', none.window.__zclickGmRequests.length, 0);
     });
   });
@@ -1295,7 +1320,7 @@ function runAlertGraceTests() {
     check('young patient is not stored', alertedEntries(window).length, 0);
     check('young patient schedules one recheck', !!api.getAlertGraceTimer(), true);
     api.setApiRowsForTest(youngRows, '/api/jobs');
-    check('status shows waiting count', api.teamsAlertStatusText(t0).indexOf('Waiting (<3 min): 1') !== -1, true);
+    check('status shows waiting count', api.teamsAlertStatusText(t0).indexOf('Unmatched today: 1 (sent: 0, waiting <3 min: 1)') !== -1, true);
     api.setApiRowsForTest(null);
     return api.maybeAlertNewUnmatched(api.summarizeDay(youngRows, 'today', t0), { groups: [] });
   }).then(function (res) {
@@ -1321,7 +1346,61 @@ function runAlertGraceTests() {
     check('unparseable submitted time still alerts', !!(res && res.sent), true);
     check('unparseable time sends one request', window.__zclickGmRequests.length, 1);
     api.clearAlertGraceTimer();
-    api.setNow(NOW);
+    window.__zclickGmRequests = [];
+    const P_M = 'TEST^C (002)';
+    const mRows = [{ patient: P_M, workflow: 'KP_ROS', template: 'Prostate', series: 'CT Z', submitted: '2026-11-12 14:59:00', status: 'Completed' }];
+    const tm = new Date(2026, 10, 12, 15, 0, 0);
+    api.setNow(tm);
+    return api.maybeAlertNewUnmatched(api.summarizeDay(mRows, 'today', tm), { groups: [] }).then(function (res) {
+      check('young matched patient waits', res && res.reason, 'waiting');
+      check('young matched patient sends nothing', window.__zclickGmRequests.length, 0);
+      check('young matched patient is not stored', alertedHashes(window).indexOf(api.hashMatchedAlertKey(P_M)), -1);
+      check('young matched patient uses the same single recheck timer', !!api.getAlertGraceTimer(), true);
+      api.setApiRowsForTest(mRows, '/api/jobs');
+      check('status shows matched waiting count', api.teamsAlertStatusText(tm).indexOf('Matched today: 1 (sent: 0, waiting <3 min: 1)') !== -1, true);
+      api.setApiRowsForTest(null);
+      const tm2 = new Date(2026, 10, 12, 15, 2, 1);
+      api.setNow(tm2);
+      return api.maybeAlertNewUnmatched(api.summarizeDay(mRows, 'today', tm2), { groups: [] });
+    }).then(function (res) {
+      check('matched patient alerts once 3 minutes old', !!(res && res.sent), true);
+      check('old-enough matched card', window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: matched', 'TEST^C (002) \u2014 11/12 14:59']]);
+      check('matched hash stored after success', alertedHashes(window).indexOf(api.hashMatchedAlertKey(P_M)) !== -1, true);
+      api.clearAlertGraceTimer();
+      // Sequential sends and per-patient storage.
+      const P_X = 'TEST^D (003)';
+      const P_Y = 'TEST^E (004)';
+      const seqRows = [
+        { patient: P_X, workflow: 'KP_ROS', template: '-', series: 'CT 1', submitted: '2026-11-12 13:00:00', status: 'Transferred' },
+        { patient: P_Y, workflow: 'KP_ROS', template: 'Prostate', series: 'CT 2', submitted: '2026-11-12 13:00:00', status: 'Completed' }
+      ];
+      window.__zclickGmRequests = [];
+      window.__zclickGmMode = 'pending';
+      window.__zclickGmPending.splice(0);
+      const p = api.maybeAlertNewUnmatched(api.summarizeDay(seqRows, 'today', new Date(2026, 10, 12, 15, 2, 1)), { groups: [] });
+      check('sequential: only the first patient is in flight', window.__zclickGmRequests.length, 1);
+      check('sequential: first in flight is the unmatched card', alertLinesFromRequest(window.__zclickGmRequests[0])[0], '0click: unmatched');
+      const firstReq = window.__zclickGmPending.shift();
+      firstReq.onload({ status: 500 });
+      return settle().then(function () {
+        check('sequential: second send starts after the first finishes', window.__zclickGmRequests.length, 2);
+        check('sequential: second card is the matched card', alertLinesFromRequest(window.__zclickGmRequests[1])[0], '0click: matched');
+        window.__zclickGmPending.shift().onload({ status: 202 });
+        return p;
+      }).then(function (res) {
+        check('per-patient result counts', [res.sentCount, res.failedCount], [1, 1]);
+        const hs = alertedHashes(window);
+        check('failed patient is not stored', hs.indexOf(api.hashAlertKey(P_X)), -1);
+        check('successful patient is stored', hs.indexOf(api.hashMatchedAlertKey(P_Y)) !== -1, true);
+        window.__zclickGmMode = 'load';
+        window.__zclickGmRequests = [];
+        return api.maybeAlertNewUnmatched(api.summarizeDay(seqRows, 'today', new Date(2026, 10, 12, 15, 2, 1)), { groups: [] });
+      }).then(function () {
+        check('only the failed patient retries next refresh', window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: unmatched', 'TEST^D (003) \u2014 11/12 13:00']]);
+        api.clearAlertGraceTimer();
+        api.setNow(NOW);
+      });
+    });
   });
 }
 
@@ -1432,7 +1511,7 @@ function runAutoRefreshTests() {
     first.window.__zclickGmStatus = 202;
     first.window.__zclickGmMode = 'load';
     first.api.addPanel();
-    return Promise.resolve().then(function () {
+    return settle().then(function () {
       check('first load alerts once before a reload', first.window.__zclickGmRequests.length, 1);
       const stored = storedAlerted(first.window);
       check('dedup storage has no patient data', hasPhiLeak(stored, [P_ORANGE, 'ORANGE', '555555', 'CT HEAD']), false);
@@ -1442,7 +1521,7 @@ function runAutoRefreshTests() {
       reloaded.window.__zclickGmRequests = [];
       reloaded.window.__zclickGmStatus = 202;
       reloaded.api.addPanel();
-      return Promise.resolve().then(function () {
+      return settle().then(function () {
         check('dedup survives a reload via GM storage', reloaded.window.__zclickGmRequests.length, 0);
         check('reloaded storage still has no patient data', hasPhiLeak(storedAlerted(reloaded.window), [P_ORANGE, 'ORANGE', '555555', 'CT HEAD']), false);
       });
