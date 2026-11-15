@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.23
+// @version      1.24
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.23 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.24 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.23';
-  const PANEL_TITLE = '0click 1.23';
+  const SCRIPT_VERSION = '1.24';
+  const PANEL_TITLE = '0click 1.24';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1940,6 +1940,12 @@
     }
     const lines = teamsUnmatchedAlertLines(fresh, now);
     return sendTeams(lines).then(function (result) {
+      lastAlertAttempt = {
+        sent: !!(result && result.sent),
+        status: result && result.status != null ? Number(result.status) : 0,
+        reason: result && result.reason ? String(result.reason) : '',
+        at: nowFn()
+      };
       if (result && result.sent) {
         const next = loadAlerted(now);
         const seen = Object.create(null);
@@ -1968,6 +1974,52 @@
   }
   function resetTeamsAlertState() {
     teamsAlertPending = Object.create(null);
+    lastAlertAttempt = null;
+  }
+  let lastAlertAttempt = null;
+  function countQualifying(summary, known) {
+    const groups = (summary && summary.groups) || [];
+    let total = 0;
+    let sent = 0;
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
+      if (!isUnmatchedOnly(g) || !g.patient) continue;
+      total++;
+      if (known[hashAlertKey(g.patient)]) sent++;
+    }
+    return { total: total, sent: sent };
+  }
+  function teamsAlertStatusText(now) {
+    const when = now || nowFn();
+    const info = getRowsAndSource();
+    const stored = loadAlerted(when);
+    const known = Object.create(null);
+    for (let i = 0; i < stored.entries.length; i++) known[stored.entries[i].h] = true;
+    const t = countQualifying(summarizeDay(info.rows, 'today', when), known);
+    const y = countQualifying(summarizeDay(info.rows, 'yesterday', when), known);
+    let last = 'never attempted';
+    if (lastAlertAttempt) {
+      last = (lastAlertAttempt.sent ? 'sent' : 'failed') +
+        ' (HTTP ' + (lastAlertAttempt.status || 0) + (lastAlertAttempt.reason ? ', ' + lastAlertAttempt.reason : '') + ')' +
+        ' at ' + formatAlertStamp(lastAlertAttempt.at);
+    }
+    return [
+      '0click Teams alert status',
+      'Teams alerts: ' + (teamsAlertsEnabled() ? 'on' : 'off'),
+      'Webhook URL: ' + (getTeamsWebhook() ? 'saved' : 'not set'),
+      'Data source: ' + info.source + (info.state ? ' (' + info.state + ')' : ''),
+      'Today qualifying: ' + t.total + ' (already sent: ' + t.sent + ')',
+      'Yesterday qualifying: ' + y.total + ' (already sent: ' + y.sent + ')',
+      'Stored alert entries: ' + stored.entries.length,
+      'Last send (this page load): ' + last
+    ].join('\n');
+  }
+  function showTeamsAlertStatus() {
+    const text = teamsAlertStatusText();
+    try {
+      if (typeof alert === 'function') alert(text);
+    } catch (e) { /* ignore */ }
+    return text;
   }
 
   const AUTO_REFRESH_KEY = 'autoRefresh';
@@ -2111,6 +2163,7 @@
         GM_registerMenuCommand('Set Teams webhook URL', promptSetTeamsWebhook);
         GM_registerMenuCommand('Send Teams test', sendTeamsTest);
         GM_registerMenuCommand('Teams alerts: on/off', toggleTeamsAlerts);
+        GM_registerMenuCommand('Teams alert status', showTeamsAlertStatus);
         GM_registerMenuCommand('Auto-refresh (5 min): on/off', toggleAutoRefresh);
       }
     } catch (e) { /* GM menu unavailable in this context */ }
@@ -2136,7 +2189,7 @@
       TEAMS_ALERTED_KEY, TEAMS_ALERTS_ENABLED_KEY, sha256Hex, hashAlertKey, isUnmatchedOnly,
       teamsUnmatchedAlertText, teamsUnmatchedPatientLine, teamsUnmatchedAlertLines, unmatchedPatientIdentity,
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
-      loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusNote,
+      loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusText, teamsAlertStatusNote,
       alertWindowDates, isAlertDayKept, pruneAlertEntries, formatAlertClock, formatAlertStamp, latestSubmittedDate,
       AUTO_REFRESH_KEY, AUTO_REFRESH_MS, AUTO_REFRESH_RETRY_MS, AUTO_REFRESH_TYPING_MS,
       autoRefreshEnabled, setAutoRefreshEnabled, toggleAutoRefresh, startAutoRefresh, stopAutoRefresh,

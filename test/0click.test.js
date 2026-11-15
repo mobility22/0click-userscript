@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.23', /@version\s+1\.23\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.23'/.test(src), true);
-check('script header comment 0click 1.23', /\/\/ 0click 1\.23\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.23'/.test(src), true);
+check('script @version 1.24', /@version\s+1\.24\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.24'/.test(src), true);
+check('script header comment 0click 1.24', /\/\/ 0click 1\.24\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.24'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -243,7 +243,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.23', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.23'), true);
+  check('panel title is 0click 1.24', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.24'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -834,7 +834,11 @@ function runTeamsTests() {
     window.__zclickGmStatus = 403;
     window.__zclickGmError = false;
     api.registerTeamsMenu();
-    check('Teams menu commands are registered', window.__zclickMenu.map(function (m) { return m.title; }), ['Set Teams webhook URL', 'Send Teams test', 'Teams alerts: on/off', 'Auto-refresh (5 min): on/off']);
+    check('Teams menu commands are registered', window.__zclickMenu.map(function (m) { return m.title; }), ['Set Teams webhook URL', 'Send Teams test', 'Teams alerts: on/off', 'Teams alert status', 'Auto-refresh (5 min): on/off']);
+    const statusText = api.teamsAlertStatusText();
+    check('Teams alert status shows on/off and webhook saved', /Teams alerts: (on|off)/.test(statusText) && statusText.indexOf('Webhook URL: saved') !== -1, true);
+    check('Teams alert status says never attempted before any alert', statusText.indexOf('never attempted') !== -1, true);
+    check('Teams alert status has no webhook URL', statusText.indexOf(FAKE_HOOK) === -1, true);
     return api.sendTeamsTest();
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
