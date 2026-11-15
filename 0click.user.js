@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.24
+// @version      1.25
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.24 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.25 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.24';
-  const PANEL_TITLE = '0click 1.24';
+  const SCRIPT_VERSION = '1.25';
+  const PANEL_TITLE = '0click 1.25';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1673,6 +1673,33 @@
   const TEAMS_ALERTED_KEY = 'teamsAlerted';
   const TEAMS_ALERTS_ENABLED_KEY = 'teamsAlertsEnabled';
   let teamsAlertPending = Object.create(null);
+  // Images are still processing for ~2-3 min after submit; wait before alerting.
+  const ALERT_GRACE_MS = 3 * 60 * 1000;
+  const ALERT_GRACE_EXTRA_MS = 5 * 1000;
+  let alertGraceTimer = null;
+  function alertAgeMs(when, now) {
+    if (!isAlertDate(when)) return null;
+    return now.getTime() - when.getTime();
+  }
+  function isAlertTooYoung(when, now) {
+    const age = alertAgeMs(when, now);
+    return age != null && age < ALERT_GRACE_MS;
+  }
+  function clearAlertGraceTimer() {
+    if (alertGraceTimer) clearTimeout(alertGraceTimer);
+    alertGraceTimer = null;
+  }
+  function scheduleAlertGraceRecheck(delayMs) {
+    if (alertGraceTimer) return false;
+    const delay = Math.max(1000, Math.min(ALERT_GRACE_MS, delayMs) + ALERT_GRACE_EXTRA_MS);
+    alertGraceTimer = setTimeout(function () {
+      alertGraceTimer = null;
+      try {
+        if (document.getElementById(PANEL_ID)) renderBody();
+      } catch (e) { /* ignore */ }
+    }, delay);
+    return true;
+  }
 
   function utf8Bytes(text) {
     const str = String(text == null ? '' : text);
@@ -1923,6 +1950,8 @@
     for (let i = 0; i < stored.entries.length; i++) known[stored.entries[i].h] = true;
     const patients = unmatchedOnlyPatients(todaySummary, yesterdaySummary);
     const fresh = [];
+    let waiting = 0;
+    let soonestWaitMs = null;
     for (let i = 0; i < patients.length; i++) {
       const item = patients[i];
       const hashes = item.hashes || [];
@@ -1931,9 +1960,16 @@
         if (known[hashes[j]] || teamsAlertPending[hashes[j]]) { already = true; break; }
       }
       if (already || !hashes.length) continue;
+      if (isAlertTooYoung(item.when, now)) {
+        waiting++;
+        const left = ALERT_GRACE_MS - alertAgeMs(item.when, now);
+        if (soonestWaitMs == null || left < soonestWaitMs) soonestWaitMs = left;
+        continue;
+      }
       fresh.push(item);
     }
-    if (!fresh.length) return Promise.resolve({ sent: false, reason: 'none' });
+    if (waiting) scheduleAlertGraceRecheck(soonestWaitMs);
+    if (!fresh.length) return Promise.resolve({ sent: false, reason: waiting ? 'waiting' : 'none', waiting: waiting });
     for (let i = 0; i < fresh.length; i++) {
       const hashes = fresh[i].hashes || [];
       for (let j = 0; j < hashes.length; j++) teamsAlertPending[hashes[j]] = true;
@@ -1975,19 +2011,23 @@
   function resetTeamsAlertState() {
     teamsAlertPending = Object.create(null);
     lastAlertAttempt = null;
+    clearAlertGraceTimer();
   }
   let lastAlertAttempt = null;
-  function countQualifying(summary, known) {
+  function countQualifying(summary, known, now) {
     const groups = (summary && summary.groups) || [];
+    const when = now || nowFn();
     let total = 0;
     let sent = 0;
+    let waiting = 0;
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i];
       if (!isUnmatchedOnly(g) || !g.patient) continue;
       total++;
       if (known[hashAlertKey(g.patient)]) sent++;
+      else if (isAlertTooYoung(latestSubmittedDate(g), when)) waiting++;
     }
-    return { total: total, sent: sent };
+    return { total: total, sent: sent, waiting: waiting };
   }
   function teamsAlertStatusText(now) {
     const when = now || nowFn();
@@ -1995,8 +2035,8 @@
     const stored = loadAlerted(when);
     const known = Object.create(null);
     for (let i = 0; i < stored.entries.length; i++) known[stored.entries[i].h] = true;
-    const t = countQualifying(summarizeDay(info.rows, 'today', when), known);
-    const y = countQualifying(summarizeDay(info.rows, 'yesterday', when), known);
+    const t = countQualifying(summarizeDay(info.rows, 'today', when), known, when);
+    const y = countQualifying(summarizeDay(info.rows, 'yesterday', when), known, when);
     let last = 'never attempted';
     if (lastAlertAttempt) {
       last = (lastAlertAttempt.sent ? 'sent' : 'failed') +
@@ -2010,6 +2050,7 @@
       'Data source: ' + info.source + (info.state ? ' (' + info.state + ')' : ''),
       'Today qualifying: ' + t.total + ' (already sent: ' + t.sent + ')',
       'Yesterday qualifying: ' + y.total + ' (already sent: ' + y.sent + ')',
+      'Waiting (<3 min): ' + (t.waiting + y.waiting),
       'Stored alert entries: ' + stored.entries.length,
       'Last send (this page load): ' + last
     ].join('\n');
@@ -2190,6 +2231,7 @@
       teamsUnmatchedAlertText, teamsUnmatchedPatientLine, teamsUnmatchedAlertLines, unmatchedPatientIdentity,
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
       loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusText, teamsAlertStatusNote,
+      ALERT_GRACE_MS, isAlertTooYoung, clearAlertGraceTimer, getAlertGraceTimer: function () { return alertGraceTimer; },
       alertWindowDates, isAlertDayKept, pruneAlertEntries, formatAlertClock, formatAlertStamp, latestSubmittedDate,
       AUTO_REFRESH_KEY, AUTO_REFRESH_MS, AUTO_REFRESH_RETRY_MS, AUTO_REFRESH_TYPING_MS,
       autoRefreshEnabled, setAutoRefreshEnabled, toggleAutoRefresh, startAutoRefresh, stopAutoRefresh,

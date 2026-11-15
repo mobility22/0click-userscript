@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.24', /@version\s+1\.24\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.24'/.test(src), true);
-check('script header comment 0click 1.24', /\/\/ 0click 1\.24\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.24'/.test(src), true);
+check('script @version 1.25', /@version\s+1\.25\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.25'/.test(src), true);
+check('script header comment 0click 1.25', /\/\/ 0click 1\.25\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.25'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -243,7 +243,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.24', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.24'), true);
+  check('panel title is 0click 1.25', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.25'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -1276,6 +1276,55 @@ function runTeamsAlertTests() {
   });
 }
 
+function runAlertGraceTests() {
+  const FAKE_HOOK = 'https://example.invalid/teams-webhook';
+  const P_NEW = 'TEST^A (000)';
+  const P_ODD = 'TEST^B (001)';
+  const { api, window } = loadApi(jobsTableFromRows([]));
+  check('alert grace is 3 minutes', api.ALERT_GRACE_MS, 3 * 60 * 1000);
+  api.setTeamsWebhook(FAKE_HOOK);
+  window.__zclickGmStatus = 202;
+  window.__zclickGmRequests = [];
+  const youngRows = [{ patient: P_NEW, workflow: 'KP_ROS', template: '-', series: 'CT X', submitted: '2026-11-12 14:58:30', status: 'Transferred' }];
+  const t0 = new Date(2026, 10, 12, 15, 0, 0);
+  api.setNow(t0);
+  api.clearAlertGraceTimer();
+  return api.maybeAlertNewUnmatched(api.summarizeDay(youngRows, 'today', t0), { groups: [] }).then(function (res) {
+    check('young unmatched patient is skipped', res && res.reason, 'waiting');
+    check('young patient sends nothing', window.__zclickGmRequests.length, 0);
+    check('young patient is not stored', alertedEntries(window).length, 0);
+    check('young patient schedules one recheck', !!api.getAlertGraceTimer(), true);
+    api.setApiRowsForTest(youngRows, '/api/jobs');
+    check('status shows waiting count', api.teamsAlertStatusText(t0).indexOf('Waiting (<3 min): 1') !== -1, true);
+    api.setApiRowsForTest(null);
+    return api.maybeAlertNewUnmatched(api.summarizeDay(youngRows, 'today', t0), { groups: [] });
+  }).then(function (res) {
+    check('second young render still waits', res && res.reason, 'waiting');
+    check('second young render sends nothing', window.__zclickGmRequests.length, 0);
+    const t1 = new Date(2026, 10, 12, 15, 1, 31);
+    api.setNow(t1);
+    return api.maybeAlertNewUnmatched(api.summarizeDay(youngRows, 'today', t1), { groups: [] });
+  }).then(function (res) {
+    check('patient alerts once 3 minutes old', !!(res && res.sent), true);
+    check('old-enough patient sends one request', window.__zclickGmRequests.length, 1);
+    check('old-enough patient is stored once', alertedEntries(window).map(function (e) { return e.h; }), [api.hashAlertKey(P_NEW)]);
+    window.__zclickGmRequests = [];
+    return api.maybeAlertNewUnmatched(api.summarizeDay(youngRows, 'today', new Date(2026, 10, 12, 15, 1, 31)), { groups: [] });
+  }).then(function (res) {
+    check('grace patient is not re-alerted', window.__zclickGmRequests.length, 0);
+    check('grace patient dedup reason is none', res && res.reason, 'none');
+    const oddRows = [{ patient: P_ODD, workflow: 'KP_ROS', template: '-', series: 'CT Y', submitted: 'not-a-date', status: 'Transferred' }];
+    const odd = { groups: [{ patient: P_ODD, matched: [], unmatched: oddRows, matchedCount: 0, unmatchedCount: 1 }] };
+    check('unparseable group still qualifies', api.isUnmatchedOnly(odd.groups[0]), true);
+    return api.maybeAlertNewUnmatched(odd, { groups: [] });
+  }).then(function (res) {
+    check('unparseable submitted time still alerts', !!(res && res.sent), true);
+    check('unparseable time sends one request', window.__zclickGmRequests.length, 1);
+    api.clearAlertGraceTimer();
+    api.setNow(NOW);
+  });
+}
+
 function runAutoRefreshTests() {
   const FAKE_HOOK = 'https://example.invalid/teams-webhook';
   const P_ORANGE = 'ORANGE, FAKE (555555)';
@@ -1402,7 +1451,7 @@ function runAutoRefreshTests() {
 }
 
 function finish() {
-  Promise.resolve().then(runClipboardFallback).then(runTeamsTests).then(runTeamsAlertTests).then(runAutoRefreshTests).catch(function (err) {
+  Promise.resolve().then(runClipboardFallback).then(runTeamsTests).then(runTeamsAlertTests).then(runAlertGraceTests).then(runAutoRefreshTests).catch(function (err) {
     failed++;
     console.log('FAIL clipboard or Teams tests threw ' + String(err && err.message || err));
   }).then(function () {
