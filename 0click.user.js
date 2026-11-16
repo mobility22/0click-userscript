@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.31
+// @version      1.32
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.31 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.32 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.31';
-  const PANEL_TITLE = '0click 1.31';
+  const SCRIPT_VERSION = '1.32';
+  const PANEL_TITLE = '0click 1.32';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1308,8 +1308,8 @@
     target.appendChild(document.createTextNode(
       patients + ' patient' + (patients === 1 ? '' : 's') +
       ' · ' + (n.seriesCount || 0) + ' series · ' +
-      groups.filter(g => g.matchedCount > 0 && g.unmatchedCount === 0).length + ' matched · ' +
-      groups.filter(g => g.unmatchedCount > 0).length + ' unmatched'
+      groups.filter(g => g.matchedCount > 0).length + ' matched · ' +
+      groups.filter(g => g.matchedCount === 0 && g.unmatchedCount > 0).length + ' unmatched'
     ));
     if (errors > 0) {
       target.appendChild(document.createTextNode(' · '));
@@ -1336,8 +1336,8 @@
     const fr = el('tr');
     fr.appendChild(el('td', '', yesterday.patientCount + ' patient' + (yesterday.patientCount === 1 ? '' : 's')));
     const yGroups = yesterday.groups || [];
-    const yMatchedPatients = yGroups.filter(g => g.matchedCount > 0 && g.unmatchedCount === 0).length;
-    const yUnmatchedPatients = yGroups.filter(g => g.unmatchedCount > 0).length;
+    const yMatchedPatients = yGroups.filter(g => g.matchedCount > 0).length;
+    const yUnmatchedPatients = yGroups.filter(g => g.matchedCount === 0 && g.unmatchedCount > 0).length;
     fr.appendChild(el('td', '', yUnmatchedPatients + ' unmatched'));
     fr.appendChild(el('td', '', yMatchedPatients + ' matched'));
     const errTd = el('td', '');

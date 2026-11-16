@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.31', /@version\s+1\.31\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.31'/.test(src), true);
-check('script header comment 0click 1.31', /\/\/ 0click 1\.31\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.31'/.test(src), true);
+check('script @version 1.32', /@version\s+1\.32\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.32'/.test(src), true);
+check('script header comment 0click 1.32', /\/\/ 0click 1\.32\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.32'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -244,7 +244,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.31', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.31'), true);
+  check('panel title is 0click 1.32', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.32'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -252,7 +252,7 @@ function loadApi(html) {
   const totalsEls = root ? [...root.querySelectorAll('.totals')] : [];
   const totalsText = totalsEls[0] ? totalsEls[0].textContent : '';
   check('panel has a single top stats line', totalsEls.length, 1);
-  check('top stats line is today only', totalsText, '2 patients \u00b7 3 series \u00b7 1 matched \u00b7 1 unmatched');
+  check('top stats line is today only', totalsText, '2 patients \u00b7 3 series \u00b7 2 matched \u00b7 0 unmatched');
   check('default stats line has no error count', totalsText.indexOf('error') === -1 && !root.querySelector('.error-count'), true);
   const bodyText = root && root.querySelector('.body') ? root.querySelector('.body').textContent : '';
   check('panel lists first patient name in shadow only', bodyText.indexOf(P1_NAME) !== -1, true);
@@ -469,7 +469,7 @@ function loadApi(html) {
   const root = api.panelRoot();
   const totals = root && root.querySelector('.totals') ? root.querySelector('.totals').textContent : '';
   const errSpan = root && root.querySelector('.totals .error-count');
-  check('top stats line is today only including today errors', totals, '2 patients \u00b7 4 series \u00b7 0 matched \u00b7 2 unmatched \u00b7 2 errors');
+  check('top stats line is today only including today errors', totals, '2 patients \u00b7 4 series \u00b7 1 matched \u00b7 1 unmatched \u00b7 2 errors');
   check('stats line appends red error count', !!(errSpan && errSpan.textContent === '2 errors' && /2 errors/.test(totals) && totals.indexOf('4 errors') === -1), true);
   check('error count is in a red error-count span', !!(errSpan && errSpan.classList.contains('error-count')), true);
   const foot = root ? [...root.querySelectorAll('table.grid tfoot td')].map(td => td.textContent.trim()) : [];
