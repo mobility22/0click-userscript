@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.28', /@version\s+1\.28\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.28'/.test(src), true);
-check('script header comment 0click 1.28', /\/\/ 0click 1\.28\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.28'/.test(src), true);
+check('script @version 1.29', /@version\s+1\.29\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.29'/.test(src), true);
+check('script header comment 0click 1.29', /\/\/ 0click 1\.29\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.29'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -28,7 +28,7 @@ check('script @grant GM_getValue', /@grant\s+GM_getValue/.test(src), true);
 check('script @connect uses bare domains plus * fallback', src.indexOf('@connect      powerplatform.com') !== -1 && src.indexOf('@connect      api.powerplatform.com') !== -1 && src.indexOf('@connect      environment.api.powerplatform.com') !== -1 && src.indexOf('@connect      logic.azure.com') !== -1 && src.indexOf('@connect      webhook.office.com') !== -1 && /@connect\s+\*/.test(src) && src.indexOf('*.logic.azure.com') === -1 && src.indexOf('*.powerplatform.com') === -1 && src.indexOf('*.webhook.office.com') === -1, true);
 check('script @connect * is last', src.lastIndexOf('@connect      *') > src.lastIndexOf('@connect      webhook.office.com'), true);
 check('script closed shadow', src.includes("attachShadow({ mode: 'closed' })"), true);
-check('script @downloadURL raw main', src.includes('https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js'), true);
+check('script @downloadURL raw main', src.includes('https://raw.githubusercontent.com/mobility22/0click-userscript/refs/heads/main/0click.user.js'), true);
 check('script @match Zero-Click host', src.includes('@match        http://10.240.61.81:18001/*'), true);
 check('PHI-free log: no innerText dump in log()', /log\([^)]*innerText/.test(src), false);
 check('GM_setValue keys are webhook, alerted hashes, alert toggle, and auto-refresh', /const TEAMS_WEBHOOK_KEY = 'teamsWebhook'/.test(src) && /const TEAMS_ALERTED_KEY = 'teamsAlerted'/.test(src) && /const TEAMS_ALERTS_ENABLED_KEY = 'teamsAlertsEnabled'/.test(src) && /const AUTO_REFRESH_KEY = 'autoRefresh'/.test(src) && /GM_setValue\(\s*TEAMS_WEBHOOK_KEY/.test(src) && /GM_setValue\(\s*TEAMS_ALERTED_KEY/.test(src) && /GM_setValue\(\s*TEAMS_ALERTS_ENABLED_KEY/.test(src) && /GM_setValue\(\s*AUTO_REFRESH_KEY/.test(src) && /GM_getValue\(\s*TEAMS_WEBHOOK_KEY/.test(src) && /GM_getValue\(\s*TEAMS_ALERTED_KEY/.test(src) && /GM_getValue\(\s*TEAMS_ALERTS_ENABLED_KEY/.test(src) && /GM_getValue\(\s*AUTO_REFRESH_KEY/.test(src) && !/GM_setValue\(\s*['"]/.test(src) && !/GM_getValue\(\s*['"]/.test(src), true);
@@ -244,7 +244,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.28', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.28'), true);
+  check('panel title is 0click 1.29', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.29'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);

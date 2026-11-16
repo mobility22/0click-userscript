@@ -1,7 +1,0 @@
-standalone/config.ini
-standalone/state.json
-standalone/logs/
-standalone/__pycache__/
-standalone/tests/__pycache__/
-standalone/*.log
-standalone/*.pyc

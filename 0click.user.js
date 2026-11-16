@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.28
+// @version      1.29
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
-// @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
-// @downloadURL  https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
+// @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/refs/heads/main/0click.user.js
+// @downloadURL  https://raw.githubusercontent.com/mobility22/0click-userscript/refs/heads/main/0click.user.js
 // @run-at       document-start
 // @grant        unsafeWindow
 // @grant        GM_setClipboard
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.28 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.29 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.28';
-  const PANEL_TITLE = '0click 1.28';
+  const SCRIPT_VERSION = '1.29';
+  const PANEL_TITLE = '0click 1.29';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
