@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.27
+// @version      1.28
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.27 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.28 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.27';
-  const PANEL_TITLE = '0click 1.27';
+  const SCRIPT_VERSION = '1.28';
+  const PANEL_TITLE = '0click 1.28';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1891,7 +1891,7 @@
   function teamsAlertsEnabled() {
     try {
       if (typeof GM_getValue === 'function') {
-        const v = GM_getValue(TEAMS_ALERTS_ENABLED_KEY, true);
+        const v = GM_getValue(TEAMS_ALERTS_ENABLED_KEY, false);
         if (v === false || v === 'false' || v === 0 || v === '0') return false;
         return true;
       }

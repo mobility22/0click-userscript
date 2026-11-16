@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.27', /@version\s+1\.27\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.27'/.test(src), true);
-check('script header comment 0click 1.27', /\/\/ 0click 1\.27\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.27'/.test(src), true);
+check('script @version 1.28', /@version\s+1\.28\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.28'/.test(src), true);
+check('script header comment 0click 1.28', /\/\/ 0click 1\.28\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.28'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -117,7 +117,8 @@ function loadApi(html) {
       window.GM_setClipboard = function (data) {
         window.__zclickClipboard.push({ via: 'gm', data: String(data == null ? '' : data) });
       };
-      window.__zclickGmValues = {};
+      // Seed alerts on (as a user who turned them on); the script default is off.
+      window.__zclickGmValues = { teamsAlertsEnabled: true };
       window.__zclickGmRequests = [];
       window.__zclickMenu = [];
       window.GM_getValue = function (key, def) {
@@ -243,7 +244,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.27', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.27'), true);
+  check('panel title is 0click 1.28', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.28'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -745,7 +746,7 @@ function runTeamsTests() {
     check('empty webhook trims to unset', api.getTeamsWebhook(), '');
     check('setTeamsWebhook trims and stores only the webhook key', api.setTeamsWebhook('  ' + FAKE_HOOK + '  '), true);
     check('getTeamsWebhook returns the trimmed URL', api.getTeamsWebhook(), FAKE_HOOK);
-    check('webhook storage key is teamsWebhook', Object.keys(window.__zclickGmValues), ['teamsWebhook']);
+    check('webhook storage key is teamsWebhook', Object.keys(window.__zclickGmValues).filter(k => k !== 'teamsAlertsEnabled'), ['teamsWebhook']);
     window.__zclickGmRequests = [];
     window.__zclickGmStatus = 202;
     window.__zclickGmError = false;
@@ -777,7 +778,7 @@ function runTeamsTests() {
     check('striped :443 request still succeeds', result, { sent: true, status: 202 });
     check('setTeamsWebhook empty still stores an empty value', api.setTeamsWebhook('   '), true);
     check('cleared webhook is empty', api.getTeamsWebhook(), '');
-    check('cleared storage is still only teamsWebhook', Object.keys(window.__zclickGmValues), ['teamsWebhook']);
+    check('cleared storage is still only teamsWebhook', Object.keys(window.__zclickGmValues).filter(k => k !== 'teamsAlertsEnabled'), ['teamsWebhook']);
     window.__zclickGmValues.teamsWebhook = FAKE_HOOK;
     api.addPanel();
     window.__zclickPrompts = [];
@@ -1022,7 +1023,8 @@ function runTeamsAlertTests() {
   const quotedLines = hashApi.teamsPatientAlertLines({ kind: 'unmatched', patient: quoted, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }, NOW);
   const quotedJson = JSON.stringify(hashApi.teamsPayload(quotedLines));
   check('patient lines stay valid JSON after stringify', JSON.parse(quotedJson).attachments[0].content.body[1].text, quoted + ' ' + DASH + ' ' + TODAY_STAMP);
-  check('Teams alerts default on', hashApi.teamsAlertsEnabled(), true);
+  check('Teams alerts default off when no stored value', /GM_getValue\(TEAMS_ALERTS_ENABLED_KEY, false\)/.test(src), true);
+  check('Teams alerts on when stored on', hashApi.teamsAlertsEnabled(), true);
   check('isUnmatchedOnly when orange', hashApi.isUnmatchedOnly({ unmatchedCount: 1, matchedCount: 0 }), true);
   check('isUnmatchedOnly is false when a match exists', hashApi.isUnmatchedOnly({ unmatchedCount: 1, matchedCount: 1 }), false);
   check('isUnmatchedOnly is false when fully matched', hashApi.isUnmatchedOnly({ unmatchedCount: 0, matchedCount: 1 }), false);
