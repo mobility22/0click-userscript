@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.26
+// @version      1.27
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click/refs/heads/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.26 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.27 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.26';
-  const PANEL_TITLE = '0click 1.26';
+  const SCRIPT_VERSION = '1.27';
+  const PANEL_TITLE = '0click 1.27';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -48,6 +48,18 @@
   function setNow(d) { nowFn = d ? () => new Date(d) : () => new Date(); }
   function startOfLocalDay(d) {
     return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  }
+  function isWeekend(d) {
+    const day = (d || nowFn()).getDay();
+    return day === 0 || day === 6;
+  }
+  function prevWeekday(date) {
+    const src = date || nowFn();
+    const out = new Date(src.getFullYear(), src.getMonth(), src.getDate() - 1);
+    while (out.getDay() === 0 || out.getDay() === 6) {
+      out.setDate(out.getDate() - 1);
+    }
+    return out;
   }
   function formatLocalDate(d) {
     const pad = n => String(n).padStart(2, '0');
@@ -262,11 +274,10 @@
   function dayKind(text, now) {
     const d = parseSubmittedDate(text);
     if (!d) return null;
-    const today = startOfLocalDay(now || nowFn());
-    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const range = lastTwoDayRange(now);
     const t = startOfLocalDay(d).getTime();
-    if (t === today.getTime()) return 'today';
-    if (t === yesterday.getTime()) return 'yesterday';
+    if (t === range.end.getTime()) return 'today';
+    if (t === range.start.getTime()) return 'yesterday';
     return null;
   }
   function rowsForDay(rows, which, now) {
@@ -285,7 +296,7 @@
   }
   function lastTwoDayRange(now) {
     const today = startOfLocalDay(now || nowFn());
-    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const yesterday = prevWeekday(today);
     return {
       start: yesterday,
       end: today,
@@ -295,10 +306,9 @@
   function isWithinLastTwoLocalDays(text, now) {
     const d = parseSubmittedDate(text);
     if (!d) return false;
-    const today = startOfLocalDay(now || nowFn());
-    const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
+    const range = lastTwoDayRange(now);
     const t = startOfLocalDay(d).getTime();
-    return t === today.getTime() || t === yesterday.getTime();
+    return t === range.end.getTime() || t === range.start.getTime();
   }
   function inferDateFormat(value) {
     const t = norm(value || '');
@@ -1952,6 +1962,7 @@
     return 'Teams alert failed (' + status + ')';
   }
   function maybeAlertNewUnmatched(todaySummary, yesterdaySummary) {
+    if (isWeekend(nowFn())) return Promise.resolve({ sent: false, reason: 'weekend' });
     if (!teamsAlertsEnabled()) return Promise.resolve({ sent: false, reason: 'disabled' });
     if (!getTeamsWebhook()) return Promise.resolve({ sent: false, reason: 'no-url' });
     const now = nowFn();
@@ -2083,9 +2094,12 @@
         ' (HTTP ' + (lastAlertAttempt.status || 0) + (lastAlertAttempt.reason ? ', ' + lastAlertAttempt.reason : '') + ')' +
         ' at ' + formatAlertStamp(lastAlertAttempt.at);
     }
-    return [
+    const lines = [
       '0click Teams alert status',
-      'Teams alerts: ' + (teamsAlertsEnabled() ? 'on' : 'off'),
+      'Teams alerts: ' + (teamsAlertsEnabled() ? 'on' : 'off')
+    ];
+    if (isWeekend(when)) lines.push('Alerts paused on weekends');
+    lines.push(
       'Webhook URL: ' + (getTeamsWebhook() ? 'saved' : 'not set'),
       'Data source: ' + info.source + (info.state ? ' (' + info.state + ')' : ''),
       'Unmatched today: ' + t.total + ' (sent: ' + t.sent + ', waiting <3 min: ' + t.waiting + ')',
@@ -2094,7 +2108,8 @@
       'Matched yesterday: ' + ym.total + ' (sent: ' + ym.sent + ', waiting <3 min: ' + ym.waiting + ')',
       'Stored alert entries: ' + stored.entries.length,
       'Last send (this page load): ' + last
-    ].join('\n');
+    );
+    return lines.join('\n');
   }
   function showTeamsAlertStatus() {
     const text = teamsAlertStatusText();
@@ -2207,6 +2222,7 @@
       stopAutoRefresh();
       return false;
     }
+    if (isWeekend(nowFn())) return false;
     if (shouldPostponeAutoRefresh()) {
       scheduleAutoRefreshRetry();
       return false;
@@ -2256,7 +2272,7 @@
       SCRIPT_VERSION, PANEL_TITLE, PANEL_ID, PAGE_SIZE, DEBUG,
       isRosWorkflow, isMatchedTemplate, headerKey, extractRows, rowsFromContainer,
       groupByPatient, addPanel, renderBody, panelRoot: () => panelShadow,
-      parseSubmittedDate, parseSubmittedDateTime, isWithinLastTwoLocalDays, lastTwoDayRange, setNow, formatLocalDate,
+      parseSubmittedDate, parseSubmittedDateTime, isWithinLastTwoLocalDays, lastTwoDayRange, prevWeekday, isWeekend, setNow, formatLocalDate,
       inferDateFormat, formatDateWith, mapJobObject, rowsFromPayload, pickCollection,
       isAllowedGet, buildExpandedUrls, nextPageUrl, fetchExpanded, considerResponse,
       hookNetwork, getRowsAndSource, resetApiState, sourceLabel, safePath, debugEnabled,

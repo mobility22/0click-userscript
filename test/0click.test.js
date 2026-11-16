@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.26', /@version\s+1\.26\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.26'/.test(src), true);
-check('script header comment 0click 1.26', /\/\/ 0click 1\.26\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.26'/.test(src), true);
+check('script @version 1.27', /@version\s+1\.27\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.27'/.test(src), true);
+check('script header comment 0click 1.27', /\/\/ 0click 1\.27\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.27'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -243,7 +243,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.26', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.26'), true);
+  check('panel title is 0click 1.27', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.27'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -1529,8 +1529,102 @@ function runAutoRefreshTests() {
   });
 }
 
+function runWeekdayWindowTests() {
+  const FAKE_HOOK = 'https://example.invalid/teams-webhook';
+  const P_ORANGE = 'ORANGE, FAKE (555555)';
+  const P_AMBER = 'AMBER, FAKE (666666)';
+  const P_GREEN = 'GREEN, FAKE (777777)';
+  const mon = new Date(2026, 10, 9, 15, 0, 0); // Monday
+  const tue = new Date(2026, 10, 10, 15, 0, 0); // Tuesday
+  const sat = new Date(2026, 10, 14, 15, 0, 0); // Saturday
+  const sun = new Date(2026, 10, 15, 15, 0, 0); // Sunday
+  const { api, window } = loadApi('');
+
+  check('prevWeekday Monday is Friday', api.formatLocalDate(api.prevWeekday(mon)), '2026-11-06');
+  check('prevWeekday Tuesday is Monday', api.formatLocalDate(api.prevWeekday(tue)), '2026-11-09');
+  check('prevWeekday Saturday is Friday', api.formatLocalDate(api.prevWeekday(sat)), '2026-11-13');
+  check('prevWeekday Sunday is Friday', api.formatLocalDate(api.prevWeekday(sun)), '2026-11-13');
+  check('isWeekend Saturday', api.isWeekend(sat), true);
+  check('isWeekend Sunday', api.isWeekend(sun), true);
+  check('isWeekend Monday', api.isWeekend(mon), false);
+  check('isWeekend Thursday', api.isWeekend(NOW), false);
+
+  check('Monday window uses Friday as yesterday', api.alertWindowDates(mon), { today: '2026-11-09', yesterday: '2026-11-06' });
+  check('Monday prune keeps Friday and Monday', !!(api.isAlertDayKept('2026-11-06', mon) && api.isAlertDayKept('2026-11-09', mon) && !api.isAlertDayKept('2026-11-07', mon) && !api.isAlertDayKept('2026-11-08', mon) && !api.isAlertDayKept('2026-11-05', mon)), true);
+  check('dayKind Friday on Monday is yesterday', api.dayKind('2026-11-06 09:00:00', mon), 'yesterday');
+  check('dayKind Saturday on Monday is excluded', api.dayKind('2026-11-07 09:00:00', mon), null);
+  check('dayKind Sunday on Monday is excluded', api.dayKind('2026-11-08 09:00:00', mon), null);
+  check('dayKind Monday is today', api.dayKind('2026-11-09 13:00:00', mon), 'today');
+  check('Friday is in the Monday window', api.isWithinLastTwoLocalDays('2026-11-06 09:00:00', mon), true);
+  check('Saturday is not in the Monday window', api.isWithinLastTwoLocalDays('2026-11-07 09:00:00', mon), false);
+
+  const weekRows = [
+    { patient: P_ORANGE, workflow: 'KP_ROS', template: '-', series: 'CT HEAD', submitted: '2026-11-09 13:00:00', status: 'Transferred' },
+    { patient: P_AMBER, workflow: 'KP_ROS', template: '-', series: 'CT ABDOMEN', submitted: '2026-11-06 09:00:00', status: 'Transferred' },
+    { patient: P_GREEN, workflow: 'KP_ROS', template: '-', series: 'CT PELVIS', submitted: '2026-11-07 10:00:00', status: 'Transferred' }
+  ];
+  const yestSum = api.summarizeDay(weekRows, 'yesterday', mon);
+  const todaySum = api.summarizeDay(weekRows, 'today', mon);
+  check('Monday yesterday section is Friday rows', yestSum.groups.map(function (g) { return g.patient; }), [P_AMBER]);
+  check('Monday yesterday date label is Friday', yestSum.dateLabel, '2026-11-06');
+  check('Monday today section is Monday rows', todaySum.groups.map(function (g) { return g.patient; }), [P_ORANGE]);
+  check('Saturday rows are skipped on Monday', api.groupByPatient(weekRows, mon).patientCount, 2);
+
+  api.setNow(mon);
+  const friHash = api.hashAlertKey(P_AMBER);
+  const oldHash = api.hashAlertKey(P_GREEN);
+  api.saveAlerted({
+    entries: [
+      { h: oldHash, day: '2026-11-05' },
+      { h: friHash, day: '2026-11-06' }
+    ]
+  });
+  check('pruning keeps Friday entries on Monday', alertedEntries(window), [{ h: friHash, day: '2026-11-06' }]);
+  check('weekday status has no weekend pause line', api.teamsAlertStatusText(mon).indexOf('Alerts paused on weekends') === -1, true);
+
+  const satHtml = jobsTableFromRows([
+    jobRowHtml('Transferred', '-', P_ORANGE, 'KP_ROS', 'CT HEAD', '2026-11-14 13:00:00')
+  ]);
+  const satLoad = loadApi(satHtml);
+  satLoad.api.setNow(sat);
+  satLoad.api.setTeamsWebhook(FAKE_HOOK);
+  satLoad.window.__zclickGmStatus = 202;
+  const satBefore = storedAlerted(satLoad.window);
+  const satToday = satLoad.api.summarizeDay(satLoad.api.extractRows(), 'today', sat);
+  const satYest = satLoad.api.summarizeDay(satLoad.api.extractRows(), 'yesterday', sat);
+  return satLoad.api.maybeAlertNewUnmatched(satToday, satYest).then(function (res) {
+    check('Saturday alerts are suppressed', res, { sent: false, reason: 'weekend' });
+    check('Saturday sends no Teams request', satLoad.window.__zclickGmRequests.length, 0);
+    check('Saturday does not store alert entries', storedAlerted(satLoad.window), satBefore);
+    check('Saturday status says alerts are paused on weekends', satLoad.api.teamsAlertStatusText(sat).indexOf('Alerts paused on weekends') !== -1, true);
+    satLoad.window.__zclickReloads = 0;
+    check('Saturday auto-refresh tick does not reload', satLoad.api.autoRefreshTick(), false);
+    check('Saturday auto-refresh reload count stays 0', satLoad.window.__zclickReloads, 0);
+
+    const sunHtml = jobsTableFromRows([
+      jobRowHtml('Transferred', '-', P_ORANGE, 'KP_ROS', 'CT HEAD', '2026-11-15 13:00:00')
+    ]);
+    const sunLoad = loadApi(sunHtml);
+    sunLoad.api.setNow(sun);
+    sunLoad.api.setTeamsWebhook(FAKE_HOOK);
+    sunLoad.window.__zclickGmStatus = 202;
+    const sunBefore = storedAlerted(sunLoad.window);
+    const sunToday = sunLoad.api.summarizeDay(sunLoad.api.extractRows(), 'today', sun);
+    const sunYest = sunLoad.api.summarizeDay(sunLoad.api.extractRows(), 'yesterday', sun);
+    return sunLoad.api.maybeAlertNewUnmatched(sunToday, sunYest).then(function (sunRes) {
+      check('Sunday alerts are suppressed', sunRes, { sent: false, reason: 'weekend' });
+      check('Sunday sends no Teams request', sunLoad.window.__zclickGmRequests.length, 0);
+      check('Sunday does not store alert entries', storedAlerted(sunLoad.window), sunBefore);
+      check('Sunday status says alerts are paused on weekends', sunLoad.api.teamsAlertStatusText(sun).indexOf('Alerts paused on weekends') !== -1, true);
+      sunLoad.window.__zclickReloads = 0;
+      check('Sunday auto-refresh tick does not reload', sunLoad.api.autoRefreshTick(), false);
+      check('Sunday auto-refresh reload count stays 0', sunLoad.window.__zclickReloads, 0);
+    });
+  });
+}
+
 function finish() {
-  Promise.resolve().then(runClipboardFallback).then(runTeamsTests).then(runTeamsAlertTests).then(runAlertGraceTests).then(runAutoRefreshTests).catch(function (err) {
+  Promise.resolve().then(runClipboardFallback).then(runTeamsTests).then(runTeamsAlertTests).then(runAlertGraceTests).then(runAutoRefreshTests).then(runWeekdayWindowTests).catch(function (err) {
     failed++;
     console.log('FAIL clipboard or Teams tests threw ' + String(err && err.message || err));
   }).then(function () {
