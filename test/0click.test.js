@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.32', /@version\s+1\.32\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.32'/.test(src), true);
-check('script header comment 0click 1.32', /\/\/ 0click 1\.32\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.32'/.test(src), true);
+check('script @version 1.33', /@version\s+1\.33\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.33'/.test(src), true);
+check('script header comment 0click 1.33', /\/\/ 0click 1\.33\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.33'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -244,7 +244,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.32', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.32'), true);
+  check('panel title is 0click 1.33', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.33'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -1011,6 +1011,18 @@ function runTeamsAlertTests() {
   check('isMatchedAll when every series matched', hashApi.isMatchedAll({ unmatchedCount: 0, matchedCount: 2 }), true);
   check('isMatchedAll is false with any unmatched', hashApi.isMatchedAll({ unmatchedCount: 1, matchedCount: 1 }), false);
   check('isMatchedAll is false with nothing matched', hashApi.isMatchedAll({ unmatchedCount: 0, matchedCount: 0 }), false);
+  check('isMatchedAny with mixed series', hashApi.isMatchedAny({ unmatchedCount: 12, matchedCount: 1 }), true);
+  check('isMatchedAny is false with nothing matched', hashApi.isMatchedAny({ unmatchedCount: 3, matchedCount: 0 }), false);
+  {
+    const mixT = { groups: [{ patient: P_ORANGE, matchedCount: 1, unmatchedCount: 12, matched: [], unmatched: [] }] };
+    const noneY = { groups: [] };
+    check('mixed patient gets no unmatched alert', hashApi.alertPatients(mixT, noneY, 'unmatched').length, 0);
+    check('mixed patient gets one matched alert', hashApi.alertPatients(mixT, noneY, 'matched').map(p => p.kind), ['matched']);
+    const unT = { groups: [{ patient: P_ORANGE, matchedCount: 0, unmatchedCount: 2, matched: [], unmatched: [] }] };
+    const mY = { groups: [{ patient: P_ORANGE, matchedCount: 1, unmatchedCount: 0, matched: [], unmatched: [] }] };
+    check('match yesterday blocks unmatched today', hashApi.alertPatients(unT, mY, 'unmatched').length, 0);
+    check('match yesterday still sends one matched alert', hashApi.alertPatients(unT, mY, 'matched').length, 1);
+  }
   check('today patient line uses name, ID, and M/D HH:MM', hashApi.teamsUnmatchedPatientLine(P_ORANGE, 'today', new Date(2026, 10, 12, 13, 0, 0)), todayLine(P_ORANGE));
   check('yesterday patient line uses M/D HH:MM without Yest.', hashApi.teamsUnmatchedPatientLine(P_AMBER, 'yesterday', new Date(2026, 10, 11, 9, 0, 0)), yestLine(P_AMBER));
   check('alert stamp matches M/D HH:MM example', hashApi.formatAlertStamp(new Date(2026, 10, 13, 12, 19, 0)), '11/13 12:19');
@@ -1227,8 +1239,8 @@ function runTeamsAlertTests() {
     matched.api.addPanel();
     return settle().then(function () {
       const cards = matched.window.__zclickGmRequests.map(alertLinesFromRequest);
-      check('fully matched patients each get a matched card; partly matched do not', cards, [['0click: matched', withSite(todayLine(P_GREEN, '11/12 12:00'), 'Prostate')], ['0click: matched', withSite(yestLine(P_AMBER), 'Prostate')]]);
-      check('matched storage has only matched hashes', alertedHashes(matched.window), [matched.api.hashMatchedAlertKey(P_GREEN), matched.api.hashMatchedAlertKey(P_AMBER)].sort());
+      check('every patient with any match gets one matched card (mixed included)', cards, [['0click: matched', withSite(todayLine(P_GREEN, '11/12 12:00'), 'Prostate')], ['0click: matched', withSite(todayLine(P_ORANGE, '11/12 13:10'), 'Head and Neck')], ['0click: matched', withSite(yestLine(P_AMBER), 'Prostate')]]);
+      check('matched storage has only matched hashes', alertedHashes(matched.window), [matched.api.hashMatchedAlertKey(P_GREEN), matched.api.hashMatchedAlertKey(P_ORANGE), matched.api.hashMatchedAlertKey(P_AMBER)].sort());
       check('matched storage has no patient data', hasPhiLeak(storedAlerted(matched.window), PHI_MARKERS), false);
       matched.window.__zclickGmRequests = [];
       matched.api.renderBody();

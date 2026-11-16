@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.32
+// @version      1.33
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.32 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.33 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.32';
-  const PANEL_TITLE = '0click 1.32';
+  const SCRIPT_VERSION = '1.33';
+  const PANEL_TITLE = '0click 1.33';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1795,9 +1795,13 @@
   function isMatchedAll(group) {
     return !!(group && group.matchedCount > 0 && group.unmatchedCount === 0);
   }
+  // 1.33: any one matched series makes the patient matched (unmatched series may also exist).
+  function isMatchedAny(group) {
+    return !!(group && group.matchedCount > 0);
+  }
   const ALERT_KINDS = {
     unmatched: { header: '0click: unmatched', qualifies: isUnmatchedOnly, hash: hashAlertKey },
-    matched: { header: '0click: matched', qualifies: isMatchedAll, hash: hashMatchedAlertKey }
+    matched: { header: '0click: matched', qualifies: isMatchedAny, hash: hashMatchedAlertKey }
   };
   function unmatchedPatientIdentity(patient) {
     const id = extractPatientId(patient);
@@ -1847,11 +1851,21 @@
     const kind = ALERT_KINDS[kindKey];
     const seen = Object.create(null);
     const patients = [];
+    // 1.33: a patient with any matched series today or yesterday gets a matched alert, never an unmatched one.
+    const matchedIds = Object.create(null);
+    if (kindKey === 'unmatched') {
+      [todaySummary, yesterdaySummary].forEach(function (s) {
+        ((s && s.groups) || []).forEach(function (g) {
+          if (g && g.patient && g.matchedCount > 0) matchedIds[unmatchedPatientIdentity(g.patient)] = true;
+        });
+      });
+    }
     function addFrom(summary, day) {
       const groups = (summary && summary.groups) || [];
       for (let i = 0; i < groups.length; i++) {
         const g = groups[i];
         if (!kind.qualifies(g) || !g.patient) continue;
+        if (matchedIds[unmatchedPatientIdentity(g.patient)]) continue;
         const ident = unmatchedPatientIdentity(g.patient);
         const hash = kind.hash(g.patient);
         if (seen[ident]) {
@@ -2312,7 +2326,7 @@
       sendTeams, sendTeamsTest, teamsStatusNote, promptSetTeamsWebhook, registerTeamsMenu,
       webhookTail, teamsWebhookPromptMessage, teamsRequestUrl, teamsErrorDetail, TEAMS_TIMEOUT_MS,
       TEAMS_ALERTED_KEY, TEAMS_ALERTS_ENABLED_KEY, sha256Hex, hashAlertKey, isUnmatchedOnly,
-      teamsUnmatchedPatientLine, teamsPatientAlertLines, siteAfterRos, alertSites, unmatchedPatientIdentity, hashMatchedAlertKey, isMatchedAll, matchedAllPatients, alertPatients,
+      teamsUnmatchedPatientLine, teamsPatientAlertLines, siteAfterRos, alertSites, unmatchedPatientIdentity, hashMatchedAlertKey, isMatchedAll, isMatchedAny, matchedAllPatients, alertPatients,
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
       loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusText, teamsAlertStatusNote,
       ALERT_GRACE_MS, isAlertTooYoung, clearAlertGraceTimer, getAlertGraceTimer: function () { return alertGraceTimer; },
