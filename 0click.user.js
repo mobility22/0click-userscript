@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.30
+// @version      1.31
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.30 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.31 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.30';
-  const PANEL_TITLE = '0click 1.30';
+  const SCRIPT_VERSION = '1.31';
+  const PANEL_TITLE = '0click 1.31';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1804,16 +1804,43 @@
     if (id) return 'id:' + id;
     return 'key:' + String(patient == null ? '' : patient);
   }
-  function teamsUnmatchedPatientLine(patient, day, when) {
+  function teamsUnmatchedPatientLine(patient, day, when, site) {
     const name = displayPatientName(patient) || '';
     const id = extractPatientId(patient);
     const who = id ? (name + ' (' + id + ')') : name;
     const stamp = formatAlertStamp(when);
-    return (who ? who + ' \u2014 ' : '') + stamp;
+    return [who, norm(site), stamp].filter(Boolean).join(' \u2014 ');
+  }
+  // "ROS" as its own word (not inside "Prostate"); the site is the text after it, separators trimmed.
+  const ROS_TOKEN_RE = /(^|[^A-Za-z])ROS(?![A-Za-z])/i;
+  function siteAfterRos(text) {
+    const t = norm(text);
+    const m = ROS_TOKEN_RE.exec(t);
+    if (!m) return t;
+    return t.slice(m.index + m[0].length).replace(/^[\s_\-:\/|\u2013\u2014]+|[\s_\-:\/|\u2013\u2014]+$/g, '');
+  }
+  function alertSites(group) {
+    const out = [];
+    const matched = (group && group.matched) || [];
+    const unmatched = (group && group.unmatched) || [];
+    matched.forEach(r => {
+      if (!isMatchedTemplate(r && r.template)) return;
+      const site = siteAfterRos(r.template);
+      if (site && out.indexOf(site) === -1) out.push(site);
+    });
+    if (out.length) return out;
+    unmatched.concat(matched).forEach(r => {
+      const wf = norm(r && r.workflow);
+      if (!ROS_TOKEN_RE.test(wf)) return;
+      const site = siteAfterRos(wf);
+      if (site && out.indexOf(site) === -1) out.push(site);
+    });
+    return out;
   }
   function teamsPatientAlertLines(item, detectedAt) {
     const kind = ALERT_KINDS[item && item.kind] || ALERT_KINDS.unmatched;
-    return [kind.header, teamsUnmatchedPatientLine(item && item.patient, item && item.day, (item && item.when) || detectedAt)];
+    const sites = ((item && item.sites) || []).map(norm).filter(Boolean);
+    return [kind.header, teamsUnmatchedPatientLine(item && item.patient, item && item.day, (item && item.when) || detectedAt, sites.join(', '))];
   }
   function alertPatients(todaySummary, yesterdaySummary, kindName) {
     const kindKey = ALERT_KINDS[kindName] ? kindName : 'unmatched';
@@ -1831,7 +1858,7 @@
           if (hash && seen[ident].hashes.indexOf(hash) === -1) seen[ident].hashes.push(hash);
           continue;
         }
-        const item = { kind: kindKey, patient: String(g.patient), day: day, when: latestSubmittedDate(g), hashes: hash ? [hash] : [] };
+        const item = { kind: kindKey, patient: String(g.patient), day: day, when: latestSubmittedDate(g), hashes: hash ? [hash] : [], sites: alertSites(g) };
         seen[ident] = item;
         patients.push(item);
       }
@@ -2285,7 +2312,7 @@
       sendTeams, sendTeamsTest, teamsStatusNote, promptSetTeamsWebhook, registerTeamsMenu,
       webhookTail, teamsWebhookPromptMessage, teamsRequestUrl, teamsErrorDetail, TEAMS_TIMEOUT_MS,
       TEAMS_ALERTED_KEY, TEAMS_ALERTS_ENABLED_KEY, sha256Hex, hashAlertKey, isUnmatchedOnly,
-      teamsUnmatchedPatientLine, teamsPatientAlertLines, unmatchedPatientIdentity, hashMatchedAlertKey, isMatchedAll, matchedAllPatients, alertPatients,
+      teamsUnmatchedPatientLine, teamsPatientAlertLines, siteAfterRos, alertSites, unmatchedPatientIdentity, hashMatchedAlertKey, isMatchedAll, matchedAllPatients, alertPatients,
       unmatchedOnlyPatients, teamsAlertsEnabled, setTeamsAlertsEnabled, toggleTeamsAlerts,
       loadAlerted, saveAlerted, maybeAlertNewUnmatched, resetTeamsAlertState, teamsAlertStatusText, teamsAlertStatusNote,
       ALERT_GRACE_MS, isAlertTooYoung, clearAlertGraceTimer, getAlertGraceTimer: function () { return alertGraceTimer; },

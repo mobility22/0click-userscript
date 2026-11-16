@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.30', /@version\s+1\.30\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.30'/.test(src), true);
-check('script header comment 0click 1.30', /\/\/ 0click 1\.30\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.30'/.test(src), true);
+check('script @version 1.31', /@version\s+1\.31\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.31'/.test(src), true);
+check('script header comment 0click 1.31', /\/\/ 0click 1\.31\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.31'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -244,7 +244,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.30', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.30'), true);
+  check('panel title is 0click 1.31', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.31'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -960,6 +960,7 @@ function runTeamsAlertTests() {
   const TODAY_STAMP_AMBER = '11/12 12:00';
   const TODAY_STAMP_LATE = '11/12 13:10';
   const YEST_STAMP = '11/11 09:00';
+  const withSite = function (l, site) { const k = l.lastIndexOf(' ' + DASH + ' '); return l.slice(0, k) + ' ' + DASH + ' ' + site + l.slice(k); };
   const todayLine = function (patient, stamp) { return patient + ' ' + DASH + ' ' + (stamp || TODAY_STAMP); };
   const yestLine = function (patient, stamp) { return patient + ' ' + DASH + ' ' + (stamp || YEST_STAMP); };
   const NAME_MARKERS = [P_ORANGE, P_ORANGE_ALT, P_AMBER, P_GREEN, 'ORANGE', 'AMBER', 'GREEN', '555555', '666666', '777777'];
@@ -1019,6 +1020,16 @@ function runTeamsAlertTests() {
   check('unmatched card is header plus one patient line', built, ['0click: unmatched', todayLine(P_ORANGE)]);
   const builtM = hashApi.teamsPatientAlertLines({ kind: 'matched', patient: P_GREEN, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }, NOW);
   check('matched card is header plus one patient line', builtM, ['0click: matched', todayLine(P_GREEN)]);
+  const builtS = hashApi.teamsPatientAlertLines({ kind: 'matched', patient: P_GREEN, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0), sites: ['Brain'] }, NOW);
+  check('card line is name (ID) - site - time', builtS[1].endsWith(DASH + ' Brain ' + DASH + ' ' + TODAY_STAMP) && builtS.length === 2 && builtS[1].indexOf('ROS') === -1, true);
+  check('siteAfterRos ROS_Brain', hashApi.siteAfterRos('ROS_Brain'), 'Brain');
+  check('siteAfterRos ROS Upper Abdomen', hashApi.siteAfterRos('ROS Upper Abdomen'), 'Upper Abdomen');
+  check('siteAfterRos KP_ROS is empty', hashApi.siteAfterRos('KP_ROS'), '');
+  check('siteAfterRos keeps Prostate', hashApi.siteAfterRos('Prostate'), 'Prostate');
+  check('siteAfterRos SBRT ROS: Liver', hashApi.siteAfterRos('SBRT ROS: Liver'), 'Liver');
+  check('alertSites from matched templates', hashApi.alertSites({ matched: [{ template: 'ROS_Brain' }, { template: 'ROS_Brain' }, { template: 'ROS-Spine' }, { template: '-' }], unmatched: [] }), ['Brain', 'Spine']);
+  check('alertSites unmatched KP_ROS is empty', hashApi.alertSites({ matched: [], unmatched: [{ template: '-', workflow: 'KP_ROS' }] }), []);
+  check('alertSites unmatched from workflow', hashApi.alertSites({ matched: [], unmatched: [{ template: '-', workflow: 'ROS Lung' }] }), ['Lung']);
   const quoted = 'QUOTE, "FAKE" (ABC-1)';
   const quotedLines = hashApi.teamsPatientAlertLines({ kind: 'unmatched', patient: quoted, day: 'today', when: new Date(2026, 10, 12, 13, 0, 0) }, NOW);
   const quotedJson = JSON.stringify(hashApi.teamsPayload(quotedLines));
@@ -1064,7 +1075,7 @@ function runTeamsAlertTests() {
     return settle();
   }).then(function () {
     check('unmatched patient becoming fully matched sends one matched card', first.window.__zclickGmRequests.length, 1);
-    check('transition card is the matched header plus the patient line', alertLinesFromRequest(first.window.__zclickGmRequests[0]), ['0click: matched', todayLine(P_ORANGE)]);
+    check('transition card is the matched header plus the patient line', alertLinesFromRequest(first.window.__zclickGmRequests[0]), ['0click: matched', withSite(todayLine(P_ORANGE), 'Head and Neck')]);
     check('transition stores the matched hash next to the unmatched hash', alertedHashes(first.window), [first.api.hashAlertKey(P_ORANGE), first.api.hashMatchedAlertKey(P_ORANGE)].sort());
     first.window.__zclickGmRequests = [];
     first.api.renderBody();
@@ -1119,7 +1130,7 @@ function runTeamsAlertTests() {
       across.api.renderBody();
       return settle();
     }).then(function () {
-      check('fully matched after a yesterday unmatched alert sends one matched card', across.window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: matched', todayLine(P_ORANGE, '11/12 10:00')]]);
+      check('fully matched after a yesterday unmatched alert sends one matched card', across.window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: matched', withSite(todayLine(P_ORANGE, '11/12 10:00'), 'Head and Neck')]]);
       across.api.setApiRowsForTest([
         { patient: P_ORANGE, workflow: 'KP_ROS', template: '-', series: 'CT HEAD', submitted: '2026-11-12 13:00:00', status: 'Transferred' }
       ], '/api/jobs');
@@ -1176,7 +1187,7 @@ function runTeamsAlertTests() {
     return settle().then(function () {
       const cards = mixed.window.__zclickGmRequests.map(alertLinesFromRequest);
       check('mixed window sends one card per patient', mixed.window.__zclickGmRequests.length, 3);
-      check('mixed-window cards: unmatched today, unmatched yesterday, then matched', cards, [['0click: unmatched', todayLine(P_ORANGE)], ['0click: unmatched', yestLine(P_AMBER)], ['0click: matched', todayLine(P_GREEN, '11/12 12:00')]]);
+      check('mixed-window cards: unmatched today, unmatched yesterday, then matched', cards, [['0click: unmatched', todayLine(P_ORANGE)], ['0click: unmatched', yestLine(P_AMBER)], ['0click: matched', withSite(todayLine(P_GREEN, '11/12 12:00'), 'Prostate')]]);
       check('mixed-window storage has both kinds of hashes', alertedHashes(mixed.window), [mixed.api.hashAlertKey(P_ORANGE), mixed.api.hashAlertKey(P_AMBER), mixed.api.hashMatchedAlertKey(P_GREEN)].sort());
     });
   }).then(function () {
@@ -1216,7 +1227,7 @@ function runTeamsAlertTests() {
     matched.api.addPanel();
     return settle().then(function () {
       const cards = matched.window.__zclickGmRequests.map(alertLinesFromRequest);
-      check('fully matched patients each get a matched card; partly matched do not', cards, [['0click: matched', todayLine(P_GREEN, '11/12 12:00')], ['0click: matched', yestLine(P_AMBER)]]);
+      check('fully matched patients each get a matched card; partly matched do not', cards, [['0click: matched', withSite(todayLine(P_GREEN, '11/12 12:00'), 'Prostate')], ['0click: matched', withSite(yestLine(P_AMBER), 'Prostate')]]);
       check('matched storage has only matched hashes', alertedHashes(matched.window), [matched.api.hashMatchedAlertKey(P_GREEN), matched.api.hashMatchedAlertKey(P_AMBER)].sort());
       check('matched storage has no patient data', hasPhiLeak(storedAlerted(matched.window), PHI_MARKERS), false);
       matched.window.__zclickGmRequests = [];
@@ -1366,7 +1377,7 @@ function runAlertGraceTests() {
       return api.maybeAlertNewUnmatched(api.summarizeDay(mRows, 'today', tm2), { groups: [] });
     }).then(function (res) {
       check('matched patient alerts once 3 minutes old', !!(res && res.sent), true);
-      check('old-enough matched card', window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: matched', 'TEST^C (002) \u2014 11/12 14:59']]);
+      check('old-enough matched card', window.__zclickGmRequests.map(alertLinesFromRequest), [['0click: matched', 'TEST^C (002) \u2014 Prostate \u2014 11/12 14:59']]);
       check('matched hash stored after success', alertedHashes(window).indexOf(api.hashMatchedAlertKey(P_M)) !== -1, true);
       api.clearAlertGraceTimer();
       // Sequential sends and per-patient storage.
