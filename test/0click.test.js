@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.33', /@version\s+1\.33\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.33'/.test(src), true);
-check('script header comment 0click 1.33', /\/\/ 0click 1\.33\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.33'/.test(src), true);
+check('script @version 1.34', /@version\s+1\.34\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.34'/.test(src), true);
+check('script header comment 0click 1.34', /\/\/ 0click 1\.34\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.34'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -41,7 +41,7 @@ check('jobs/page requests stay GET only', /method:\s*'GET'/.test(src) && !/metho
 check('POST is only used for the Teams webhook', (src.match(/method:\s*['"]POST['"]/g) || []).length === 1 && /function sendTeams/.test(src), true);
 check('no hardcoded Teams webhook URL', !/https:\/\/[^\s'"]*(logic\.azure\.com|webhook\.office\.com|powerplatform\.com)/.test(src), true);
 check('Teams test message has no patient data', /const TEAMS_TEST_MESSAGE = '0click test OK'/.test(src), true);
-check('sendTeams is only used for the test menu and patient alerts', (src.match(/sendTeams\(/g) || []).length === 3 && src.indexOf('sendTeams(TEAMS_TEST_MESSAGE)') !== -1 && src.indexOf('sendTeams(lines)') !== -1 && /function maybeAlertNewUnmatched/.test(src) && src.indexOf("header: '0click: unmatched'") !== -1 && src.indexOf("header: '0click: matched'") !== -1 && /function teamsPatientAlertLines/.test(src) && /function teamsUnmatchedPatientLine/.test(src) && src.indexOf('new unmatched patient(s)') === -1, true);
+check('sendTeams is only used for the test menu and patient alerts', (src.match(/sendTeams\(/g) || []).length === 3 && src.indexOf('sendTeams(teamsTestMessage())') !== -1 && src.indexOf('sendTeams(lines)') !== -1 && /function maybeAlertNewUnmatched/.test(src) && src.indexOf("header: '0click: unmatched'") !== -1 && src.indexOf("header: '0click: matched'") !== -1 && /function teamsPatientAlertLines/.test(src) && /function teamsUnmatchedPatientLine/.test(src) && src.indexOf('new unmatched patient(s)') === -1, true);
 check('auto-alert does not log card text, names, or IDs', src.indexOf('log(lines)') === -1 && src.indexOf('debug(lines)') === -1 && src.indexOf('console.log(lines)') === -1 && src.indexOf('log(text)') === -1 && /showTeamsNote\('Teams alert sent'\)/.test(src) && /function teamsAlertStatusNote/.test(src), true);
 
 check('alert lines use M/D HH:MM with no flagged or Yest.', /function formatAlertStamp/.test(src) && src.indexOf('flagged') === -1 && src.indexOf('Yest.') === -1, true);
@@ -244,7 +244,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.33', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.33'), true);
+  check('panel title is 0click 1.34', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.34'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -843,7 +843,7 @@ function runTeamsTests() {
     return settle().then(function () { return api.sendTeamsTest(); });
   }).then(function (result) {
     const note = ((api.panelRoot() && api.panelRoot().querySelector('.locate-note')) || {}).textContent || '';
-    check('Teams test posts the fixed test message only', window.__zclickGmRequests.filter(function (r) { return alertTextFromRequest(r) === '0click test OK'; }).length, 1);
+    check('Teams test posts the fixed test message only', window.__zclickGmRequests.filter(function (r) { return /^0click test OK #\d{4}$/.test(alertTextFromRequest(r) || ''); }).length, 1);
     check('Teams test failed note shows the HTTP status only', note, 'Teams test failed (403)');
     check('Teams test note has no webhook URL', note.indexOf('example.invalid') === -1 && note.indexOf(FAKE_HOOK) === -1, true);
     check('Teams test note has no patient data', note.indexOf('DOE') === -1 && note.indexOf('000000') === -1, true);
@@ -857,7 +857,9 @@ function runTeamsTests() {
     check('Teams test OK note', note, 'Teams test OK');
     check('successful Teams test is sent', result, { sent: true, status: 202 });
     const posted = JSON.parse((window.__zclickGmRequests[0] || {}).data || '{}');
-    check('Teams test post text is only the canned message', posted.attachments[0].content.body[0].text, '0click test OK');
+    check('Teams test post text is only the canned message plus a random tag', /^0click test OK #\d{4}$/.test(posted.attachments[0].content.body[0].text), true);
+    const tags = {}; for (let i = 0; i < 30; i++) tags[api.teamsTestMessage()] = 1;
+    check('Teams test messages differ between presses', Object.keys(tags).length > 1, true);
     window.__zclickGmRequests = [];
     window.__zclickGmMode = 'error';
     window.__zclickGmErrorRes = { status: 0, error: 'Refused to connect to https://example.invalid/teams-webhook because it is not in @connect' };

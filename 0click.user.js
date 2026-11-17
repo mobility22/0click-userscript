@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.33
+// @version      1.34
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.33 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.34 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.33';
-  const PANEL_TITLE = '0click 1.33';
+  const SCRIPT_VERSION = '1.34';
+  const PANEL_TITLE = '0click 1.34';
   const PANEL_ID = 'zclick-panel';
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
@@ -1510,6 +1510,12 @@
   // typeof-guard every call so a host without those APIs just no-ops.
   const TEAMS_WEBHOOK_KEY = 'teamsWebhook';
   const TEAMS_TEST_MESSAGE = '0click test OK';
+  // Each test gets a random 4-digit tag so repeated tests never look identical
+  // (a screen-reading notifier would otherwise skip them as duplicates).
+  function teamsTestMessage() {
+    const n = Math.floor(Math.random() * 10000);
+    return TEAMS_TEST_MESSAGE + ' #' + String(n).padStart(4, '0');
+  }
   function getTeamsWebhook() {
     try {
       if (typeof GM_getValue === 'function') {
@@ -1675,7 +1681,7 @@
     else showTeamsNote('Teams webhook not saved');
   }
   function sendTeamsTest() {
-    return sendTeams(TEAMS_TEST_MESSAGE).then(function (result) {
+    return sendTeams(teamsTestMessage()).then(function (result) {
       showTeamsNote(teamsStatusNote(result));
       return result;
     });
@@ -2322,7 +2328,7 @@
       dayKind, summarizeDay, rowsForDay, MAX_CELL_LINES,
       collectDomJobRows, findPatientDomRow, locatePatient, highlightDomRow, setLocateNote, FLASH_MS,
       extractPatientId, displayPatientName, copyPatientId, writeClipboard, locateNotes,
-      TEAMS_WEBHOOK_KEY, TEAMS_TEST_MESSAGE, getTeamsWebhook, setTeamsWebhook, teamsPayload,
+      TEAMS_WEBHOOK_KEY, TEAMS_TEST_MESSAGE, teamsTestMessage, getTeamsWebhook, setTeamsWebhook, teamsPayload,
       sendTeams, sendTeamsTest, teamsStatusNote, promptSetTeamsWebhook, registerTeamsMenu,
       webhookTail, teamsWebhookPromptMessage, teamsRequestUrl, teamsErrorDetail, TEAMS_TIMEOUT_MS,
       TEAMS_ALERTED_KEY, TEAMS_ALERTS_ENABLED_KEY, sha256Hex, hashAlertKey, isUnmatchedOnly,
