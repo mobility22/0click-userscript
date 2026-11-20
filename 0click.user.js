@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.34
+// @version      1.35
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/main/0click.user.js
@@ -22,14 +22,18 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.34 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.35 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.34';
-  const PANEL_TITLE = '0click 1.34';
+  const SCRIPT_VERSION = '1.35';
+  const PANEL_TITLE = '0click 1.35';
   const PANEL_ID = 'zclick-panel';
+  // (series description, study description, template name); compared case-insensitively, trimmed.
+  const MATCH_OVERRIDES = [
+    ['Scout', 'SRS BRAIN', 'SRS'],
+  ];
   const DEBOUNCE_MS = 250;
   const PAGE_SIZE = 500;
   const MAX_PAGES = 20;
@@ -398,11 +402,14 @@
   // --- JSON field mapping (unknown API shape) ---
   const KEYS = {
     patient: ['patient', 'patientname', 'patientfullname', 'patientdisplayname', 'patientlabel', 'subjectname', 'subject'],
-    series: ['seriesdescription', 'seriesdesc', 'series', 'seriesname', 'description'],
-    workflow: ['workflow', 'workflowname', 'workflowchart', 'workflowlabel'],
-    template: ['template', 'templatename', 'matchingtemplate', 'matchedtemplate', 'templatelabel'],
-    status: ['status', 'jobstatus', 'state', 'jobstate', 'statusname'],
-    submitted: ['datesubmitted', 'submitteddate', 'submittedat', 'submittedon', 'submitted', 'datecreated', 'createdat', 'createdon', 'jobdate', 'submissiondate', 'submissiontime']
+    patientId: ['patientid'],
+    series: ['imageseriesdescription', 'seriesdescription', 'seriesdesc', 'series', 'seriesname', 'description'],
+    study: ['imagestudydescription', 'studydescription', 'study'],
+    workflow: ['workflow', 'workflowname', 'workflowid', 'workflowchart', 'workflowlabel'],
+    template: ['matchedtemplatename', 'template', 'templatename', 'matchingtemplate', 'matchedtemplate', 'templatelabel'],
+    status: ['status', 'displaystatus', 'jobstatus', 'state', 'jobstate', 'statusname'],
+    submitted: ['creationtime', 'datesubmitted', 'submitteddate', 'submittedat', 'submittedon', 'submitted', 'datecreated', 'createdat', 'createdon', 'jobdate', 'submissiondate', 'submissiontime'],
+    isRuleMatchFailure: ['isrulematchfailure', 'rulematchfailure']
   };
   function scalarText(v) {
     if (v == null) return '';
@@ -423,17 +430,59 @@
     }
     return '';
   }
+  function pickBool(obj, names) {
+    if (!obj || typeof obj !== 'object') return false;
+    const want = new Set(names);
+    for (const k of Object.keys(obj)) {
+      if (want.has(normKey(k))) return Boolean(obj[k]);
+    }
+    return false;
+  }
+  function workflowFromJob(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+    const ws = obj.workflowSettings;
+    if (ws && typeof ws === 'object' && !Array.isArray(ws) && ws.id != null && String(ws.id) !== '') return norm(ws.id);
+    if (typeof ws === 'string' && ws) return norm(ws);
+    return pickField(obj, KEYS.workflow);
+  }
+  function matchOverrideTemplate(series, study) {
+    const seriesN = norm(series).toLowerCase();
+    const studyN = norm(study).toLowerCase();
+    if (!seriesN || !studyN) return null;
+    for (const row of MATCH_OVERRIDES) {
+      const seriesPat = row[0], studyPat = row[1], template = row[2];
+      if (norm(seriesPat).toLowerCase() === seriesN && norm(studyPat).toLowerCase() === studyN) return String(template);
+    }
+    return null;
+  }
+  function formatPatient(obj) {
+    const patient = pickField(obj, KEYS.patient);
+    const pid = pickField(obj, KEYS.patientId);
+    if (patient && pid && !extractPatientId(patient)) return patient + ' (' + pid + ')';
+    return patient;
+  }
   function mapJobObject(obj) {
     if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
-      return { patient: '', series: '', workflow: '', template: '', status: '', submitted: '' };
+      return { patient: '', series: '', study: '', workflow: '', template: '', status: '', submitted: '', isRuleMatchFailure: false };
+    }
+    const series = pickField(obj, KEYS.series);
+    const study = pickField(obj, KEYS.study);
+    let template = pickField(obj, KEYS.template);
+    let isFailure = pickBool(obj, KEYS.isRuleMatchFailure);
+    const override = matchOverrideTemplate(series, study);
+    if (override) {
+      template = override;
+      isFailure = false;
     }
     return {
-      patient: pickField(obj, KEYS.patient),
-      series: pickField(obj, KEYS.series),
-      workflow: pickField(obj, KEYS.workflow),
-      template: pickField(obj, KEYS.template),
+      patient: formatPatient(obj),
+      series: series,
+      study: study,
+      workflow: workflowFromJob(obj),
+      template: template,
       status: pickField(obj, KEYS.status),
-      submitted: pickField(obj, KEYS.submitted)
+      submitted: pickField(obj, KEYS.submitted),
+      isRuleMatchFailure: isFailure
     };
   }
   function scoreJobObject(obj) {
@@ -2321,6 +2370,7 @@
       groupByPatient, addPanel, renderBody, panelRoot: () => panelShadow,
       parseSubmittedDate, parseSubmittedDateTime, isWithinLastTwoLocalDays, lastTwoDayRange, prevWeekday, isWeekend, setNow, formatLocalDate,
       inferDateFormat, formatDateWith, mapJobObject, rowsFromPayload, pickCollection,
+      MATCH_OVERRIDES, matchOverrideTemplate, workflowFromJob,
       isAllowedGet, buildExpandedUrls, nextPageUrl, fetchExpanded, considerResponse,
       hookNetwork, getRowsAndSource, resetApiState, sourceLabel, safePath, debugEnabled,
       shortSeriesLabel, consolidateUnmatched, formatMatchedItems, formatLastSubmitted, latestSubmittedText,

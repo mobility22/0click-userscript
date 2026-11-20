@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.34', /@version\s+1\.34\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.34'/.test(src), true);
-check('script header comment 0click 1.34', /\/\/ 0click 1\.34\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.34'/.test(src), true);
+check('script @version 1.35', /@version\s+1\.35\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.35'/.test(src), true);
+check('script header comment 0click 1.35', /\/\/ 0click 1\.35\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.35'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -49,6 +49,7 @@ check('alert lines use M/D HH:MM with no flagged or Yest.', /function formatAler
 const userscriptHeader = src.split('(function ()')[0];
 check('userscript header/metadata has no ROS', /ROS/.test(userscriptHeader), false);
 check('ROS workflow filter logic kept', /function isRosWorkflow/.test(src) && /\/ROS\/i/.test(src), true);
+check('MATCH_OVERRIDES lists Scout + SRS BRAIN -> SRS', /const MATCH_OVERRIDES = \[/.test(src) && src.indexOf("['Scout', 'SRS BRAIN', 'SRS']") !== -1 && /function matchOverrideTemplate/.test(src), true);
 const readme = fs.readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 check('README has no ROS', /ROS/.test(readme), false);
 
@@ -244,7 +245,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.34', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.34'), true);
+  check('panel title is 0click 1.35', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.35'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -611,6 +612,78 @@ function loadApi(html) {
   const summary = api.groupByPatient(mapped, NOW);
   check('JSON date window drops old ROS row', summary.seriesCount, 1);
   check('JSON date window keeps today unmatched', summary.unmatchedCount, 1);
+}
+
+{
+  const { api } = loadApi('');
+  const P_SCOUT = 'GREEN, FAKE (777777)';
+  const P_OTHER = 'ORANGE, FAKE (555555)';
+  const scoutJob = {
+    patientName: 'GREEN, FAKE',
+    patientId: '777777',
+    imageSeriesDescription: 'Scout',
+    imageStudyDescription: 'SRS BRAIN',
+    matchedTemplateName: '-',
+    isRuleMatchFailure: true,
+    workflowSettings: { id: 'KP_ROS' },
+    status: 'Completed',
+    creationTime: '2026-11-12T13:00:00'
+  };
+  const scoutRow = api.mapJobObject(scoutJob);
+  check('API job maps imageSeriesDescription', scoutRow.series, 'Scout');
+  check('API job maps imageStudyDescription', scoutRow.study, 'SRS BRAIN');
+  check('API job maps workflowSettings.id', scoutRow.workflow, 'KP_ROS');
+  check('API job maps creationTime', scoutRow.submitted, '2026-11-12T13:00:00');
+  check('API job formats patient name and ID', scoutRow.patient, P_SCOUT);
+  check('Scout + SRS BRAIN override template is SRS', scoutRow.template, 'SRS');
+  check('Scout + SRS BRAIN clears isRuleMatchFailure', scoutRow.isRuleMatchFailure, false);
+  check('Scout + SRS BRAIN is a matched template', api.isMatchedTemplate(scoutRow.template), true);
+  const todayScout = api.summarizeDay([scoutRow], 'today', NOW);
+  const yestScout = api.summarizeDay([scoutRow], 'yesterday', NOW);
+  check('Scout + SRS BRAIN is not unmatched-only', api.unmatchedOnlyPatients(todayScout, yestScout), []);
+  const matchedScout = api.matchedAllPatients(todayScout, yestScout);
+  check('Scout + SRS BRAIN is a matched alert patient', matchedScout.length === 1 && matchedScout[0].patient === P_SCOUT && matchedScout[0].kind === 'matched', true);
+  check('Scout + SRS BRAIN alert site is SRS', matchedScout[0].sites, ['SRS']);
+  const scoutLines = api.teamsPatientAlertLines(matchedScout[0], NOW);
+  check('Scout + SRS BRAIN alert header is matched', scoutLines[0], '0click: matched');
+  check('Scout + SRS BRAIN alert mentions SRS', scoutLines[1].indexOf('SRS') !== -1, true);
+  check('Scout + SRS BRAIN alert header is not unmatched', scoutLines[0].indexOf('unmatched') === -1, true);
+
+  const otherRow = api.mapJobObject({
+    patientName: 'ORANGE, FAKE',
+    patientId: '555555',
+    imageSeriesDescription: 'Scout',
+    imageStudyDescription: 'CT HEAD',
+    matchedTemplateName: '-',
+    isRuleMatchFailure: true,
+    workflowSettings: { id: 'KP_ROS' },
+    status: 'Completed',
+    creationTime: '2026-11-12T13:00:00'
+  });
+  check('Scout + other study keeps unmatched template', otherRow.template, '-');
+  check('Scout + other study keeps isRuleMatchFailure', otherRow.isRuleMatchFailure, true);
+  check('Scout + other study is not a matched template', api.isMatchedTemplate(otherRow.template), false);
+  const todayOther = api.summarizeDay([otherRow], 'today', NOW);
+  const yestOther = api.summarizeDay([otherRow], 'yesterday', NOW);
+  check('Scout + other study has no matched alert', api.matchedAllPatients(todayOther, yestOther), []);
+  const unmatchedOther = api.unmatchedOnlyPatients(todayOther, yestOther);
+  check('Scout + other study is unmatched-only', unmatchedOther.length === 1 && unmatchedOther[0].patient === P_OTHER, true);
+  const otherLines = api.teamsPatientAlertLines(unmatchedOther[0], NOW);
+  check('Scout + other study alert header is unmatched', otherLines[0], '0click: unmatched');
+
+  const folded = api.mapJobObject({
+    imageSeriesDescription: '  scout ',
+    imageStudyDescription: 'srs  brain',
+    matchedTemplateName: '-',
+    isRuleMatchFailure: true
+  });
+  check('override ignores case and whitespace', folded.template === 'SRS' && folded.isRuleMatchFailure === false, true);
+  check('matchOverrideTemplate exact', api.matchOverrideTemplate('Scout', 'SRS BRAIN'), 'SRS');
+  check('matchOverrideTemplate folded', api.matchOverrideTemplate(' SCOUT', 'Srs Brain'), 'SRS');
+  check('matchOverrideTemplate rejects other study', api.matchOverrideTemplate('Scout', 'BRAIN ROUTINE'), null);
+  check('matchOverrideTemplate rejects other series', api.matchOverrideTemplate('Axial', 'SRS BRAIN'), null);
+  check('matchOverrideTemplate rejects empty study', api.matchOverrideTemplate('Scout', ''), null);
+  check('matchOverrideTemplate rejects empty series', api.matchOverrideTemplate('', 'SRS BRAIN'), null);
 }
 
 {
