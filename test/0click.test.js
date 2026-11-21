@@ -11,10 +11,10 @@ function check(name, got, expected) {
   console.log((ok ? 'PASS' : 'FAIL') + ' ' + name + ' got ' + JSON.stringify(got) + ' expected ' + JSON.stringify(expected));
 }
 
-check('script @version 1.35', /@version\s+1\.35\b/.test(src), true);
-check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.35'/.test(src), true);
-check('script header comment 0click 1.35', /\/\/ 0click 1\.35\b/.test(src), true);
-check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.35'/.test(src), true);
+check('script @version 1.36', /@version\s+1\.36\b/.test(src), true);
+check('script SCRIPT_VERSION', /const SCRIPT_VERSION = '1\.36'/.test(src), true);
+check('script header comment 0click 1.36', /\/\/ 0click 1\.36\b/.test(src), true);
+check('script PANEL_TITLE', /const PANEL_TITLE = '0click 1\.36'/.test(src), true);
 check('script has no ID copied toast text', src.indexOf('ID copied') === -1, true);
 check('script has no whole-row has-error class', src.indexOf('has-error') === -1, true);
 check('script @run-at document-start', /@run-at\s+document-start/.test(src), true);
@@ -245,7 +245,7 @@ function loadApi(html) {
   check('panel host light DOM has no patient text', light.indexOf(P1_NAME) === -1 && light.indexOf(P2_NAME) === -1 && light.indexOf(P1) === -1 && light.indexOf(P2) === -1, true);
   const root = api.panelRoot();
   check('panel uses closed shadow root', !!(root && root.mode === 'closed'), true);
-  check('panel title is 0click 1.35', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.35'), true);
+  check('panel title is 0click 1.36', !!(root && root.querySelector('.title') && root.querySelector('.title').textContent === '0click 1.36'), true);
   check('panel has refresh button', !!(root && root.querySelector('.refresh')), true);
   check('panel header has no date-range subtitle', !!(root && !root.querySelector('.range')), true);
   check('panel header has no source line', !!(root && !root.querySelector('.source')), true);
@@ -684,6 +684,66 @@ function loadApi(html) {
   check('matchOverrideTemplate rejects other series', api.matchOverrideTemplate('Axial', 'SRS BRAIN'), null);
   check('matchOverrideTemplate rejects empty study', api.matchOverrideTemplate('Scout', ''), null);
   check('matchOverrideTemplate rejects empty series', api.matchOverrideTemplate('', 'SRS BRAIN'), null);
+  check('API override row is not pending', scoutRow.pendingOverride == null || scoutRow.pendingOverride === false, true);
+  check('API other-study Scout row is not pending', otherRow.pendingOverride == null || otherRow.pendingOverride === false, true);
+  check('seriesMatchesOverride Scout', api.seriesMatchesOverride('Scout'), true);
+  check('seriesMatchesOverride folded', api.seriesMatchesOverride(' SCOUT '), true);
+  check('seriesMatchesOverride other series', api.seriesMatchesOverride('CT HEAD'), false);
+  check('seriesMatchesOverride empty', api.seriesMatchesOverride(''), false);
+}
+
+{
+  const P_DOM_SCOUT = 'SCOUT, FAKE (888888)';
+  const P_DOM_PLAIN = 'PLAIN, FAKE (999999)';
+  const P_DOM_SCOUT_NAME = 'SCOUT, FAKE';
+  const P_DOM_PLAIN_NAME = 'PLAIN, FAKE';
+  const html = '<table id="jobs">' +
+    '<thead><tr>' +
+    '<th>Status</th><th>Template</th><th>Patient</th><th>Workflow</th>' +
+    '<th>Series Description</th><th>Date Submitted</th>' +
+    '</tr></thead><tbody>' +
+    '<tr><td>Transferred</td><td>-</td><td>' + P_DOM_SCOUT + '</td><td>KP_ROS</td><td>Scout</td><td>2026-11-12 13:00:00</td></tr>' +
+    '<tr><td>Transferred</td><td>-</td><td>' + P_DOM_PLAIN + '</td><td>KP_ROS</td><td>CT HEAD</td><td>2026-11-12 13:01:00</td></tr>' +
+    '<tr><td>Transferred</td><td>-</td><td>' + P_DOM_SCOUT + '</td><td>KP_ROS</td><td> scout </td><td>2026-11-11 09:00:00</td></tr>' +
+    '</tbody></table>';
+  const { api } = loadApi(html);
+  const rows = api.extractRows();
+  check('DOM fixture extracts three rows', rows.length, 3);
+  const scoutToday = rows.filter(r => r.series && r.series.toLowerCase().trim() === 'scout' && r.submitted.indexOf('2026-11-12') !== -1)[0];
+  const scoutYest = rows.filter(r => r.series && r.series.toLowerCase().trim() === 'scout' && r.submitted.indexOf('2026-11-11') !== -1)[0];
+  const plain = rows.filter(r => r.series === 'CT HEAD')[0];
+  check('DOM Scout row has no study', !!(scoutToday && scoutToday.study == null), true);
+  check('DOM Scout row is pending override', !!(scoutToday && scoutToday.pendingOverride), true);
+  check('DOM folded Scout row is pending override', !!(scoutYest && scoutYest.pendingOverride), true);
+  check('DOM non-Scout unmatched row is not pending', !!(plain && !plain.pendingOverride), true);
+
+  const summary = api.groupByPatient(rows, NOW);
+  const scoutG = summary.groups.filter(g => g.patient === P_DOM_SCOUT)[0];
+  const plainG = summary.groups.filter(g => g.patient === P_DOM_PLAIN)[0];
+  check('DOM Scout group is not unmatched or matched', !!(scoutG && scoutG.unmatchedCount === 0 && scoutG.matchedCount === 0 && scoutG.pending && scoutG.pending.length === 2), true);
+  check('DOM non-Scout group stays unmatched', !!(plainG && plainG.unmatchedCount === 1 && plainG.matchedCount === 0 && (!plainG.pending || plainG.pending.length === 0)), true);
+  check('DOM Scout does not add to unmatched count', summary.unmatchedCount, 1);
+  check('DOM Scout does not add to matched count', summary.matchedCount, 0);
+
+  const today = api.summarizeDay(rows, 'today', NOW);
+  const yest = api.summarizeDay(rows, 'yesterday', NOW);
+  const unmatchedAlerts = api.unmatchedOnlyPatients(today, yest);
+  const matchedAlerts = api.matchedAllPatients(today, yest);
+  check('DOM Scout row is not unmatched-only for alerts', unmatchedAlerts.map(p => p.patient), [P_DOM_PLAIN]);
+  check('DOM Scout row is not a matched alert patient', matchedAlerts, []);
+  check('DOM Scout isUnmatchedOnly is false', api.isUnmatchedOnly(today.groups.filter(g => g.patient === P_DOM_SCOUT)[0]), false);
+  check('DOM non-Scout isUnmatchedOnly is true', api.isUnmatchedOnly(today.groups.filter(g => g.patient === P_DOM_PLAIN)[0]), true);
+
+  api.addPanel();
+  const root = api.panelRoot();
+  const todayRows = root ? [...root.querySelectorAll('tr.day-today')] : [];
+  const yestRows = root ? [...root.querySelectorAll('tr.day-yesterday')] : [];
+  const scoutTodayTr = todayRows.find(r => r.textContent.indexOf(P_DOM_SCOUT_NAME) !== -1);
+  const plainTodayTr = todayRows.find(r => r.textContent.indexOf(P_DOM_PLAIN_NAME) !== -1);
+  const scoutYestTr = yestRows.find(r => r.textContent.indexOf(P_DOM_SCOUT_NAME) !== -1);
+  check('DOM Scout row is not flagged', !!(scoutTodayTr && !scoutTodayTr.classList.contains('alert') && !scoutTodayTr.querySelector('.alert-mark')), true);
+  check('DOM Scout yesterday row is not flagged', !!(scoutYestTr && !scoutYestTr.classList.contains('alert') && !scoutYestTr.querySelector('.alert-mark')), true);
+  check('DOM non-Scout unmatched row is still flagged', !!(plainTodayTr && plainTodayTr.classList.contains('alert') && plainTodayTr.querySelector('.alert-mark')), true);
 }
 
 {

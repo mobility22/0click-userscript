@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         0click
 // @namespace    https://github.com/mobility22/0click
-// @version      1.35
+// @version      1.36
 // @description  Read-only AutoContour Zero-Click Jobs History summary
 // @match        http://10.240.61.81:18001/*
 // @updateURL    https://raw.githubusercontent.com/mobility22/0click-userscript/main/0click.user.js
@@ -22,13 +22,13 @@
 // @inject-into  page
 // ==/UserScript==
 
-// 0click 1.35 — AutoContour Zero-Click Jobs History summary (read-only)
+// 0click 1.36 — AutoContour Zero-Click Jobs History summary (read-only)
 
 (function () {
   'use strict';
   const TAG = '[0click]';
-  const SCRIPT_VERSION = '1.35';
-  const PANEL_TITLE = '0click 1.35';
+  const SCRIPT_VERSION = '1.36';
+  const PANEL_TITLE = '0click 1.36';
   const PANEL_ID = 'zclick-panel';
   // (series description, study description, template name); compared case-insensitively, trimmed.
   const MATCH_OVERRIDES = [
@@ -444,6 +444,14 @@
     if (ws && typeof ws === 'object' && !Array.isArray(ws) && ws.id != null && String(ws.id) !== '') return norm(ws.id);
     if (typeof ws === 'string' && ws) return norm(ws);
     return pickField(obj, KEYS.workflow);
+  }
+  function seriesMatchesOverride(series) {
+    const seriesN = norm(series).toLowerCase();
+    if (!seriesN) return false;
+    for (const row of MATCH_OVERRIDES) {
+      if (norm(row[0]).toLowerCase() === seriesN) return true;
+    }
+    return false;
   }
   function matchOverrideTemplate(series, study) {
     const seriesN = norm(series).toLowerCase();
@@ -967,7 +975,7 @@
   }
   function rowFromCells(cells, map) {
     const get = key => (map[key] == null ? '' : cellText(cells[map[key]]));
-    return {
+    const rec = {
       patient: get('patient'),
       series: get('series'),
       workflow: get('workflow'),
@@ -975,6 +983,10 @@
       status: get('status'),
       submitted: get('submitted')
     };
+    // DOM tables have no study column, so MATCH_OVERRIDES cannot be applied yet.
+    // Mark override-series rows pending so they are not treated as unmatched/alert.
+    if (map.study == null && seriesMatchesOverride(rec.series)) rec.pendingOverride = true;
+    return rec;
   }
   function rowsFromContainer(root, withEl) {
     if (!root || ourUi(root)) return [];
@@ -1047,11 +1059,12 @@
     if (!name) return null;
     const matched = (group && group.matched) || [];
     const unmatched = (group && group.unmatched) || [];
+    const pending = (group && group.pending) || [];
     if (matched.length) {
       const hit = findDomRowFor(name, matched);
       if (hit) return hit;
     }
-    return findDomRowFor(name, unmatched.concat(matched)) || findDomRowFor(name, []);
+    return findDomRowFor(name, unmatched.concat(matched, pending)) || findDomRowFor(name, []);
   }
   function sameStatus(a, b) {
     return norm(statusLabel(a)).toLowerCase() === norm(statusLabel(b)).toLowerCase();
@@ -1219,11 +1232,12 @@
     const map = new Map();
     for (const r of ros) {
       if (!map.has(r.patient)) {
-        map.set(r.patient, { patient: r.patient, matched: [], unmatched: [] });
+        map.set(r.patient, { patient: r.patient, matched: [], unmatched: [], pending: [] });
         order.push(r.patient);
       }
       const g = map.get(r.patient);
-      if (isMatchedTemplate(r.template)) g.matched.push(r);
+      if (r.pendingOverride) g.pending.push(r);
+      else if (isMatchedTemplate(r.template)) g.matched.push(r);
       else g.unmatched.push(r);
     }
     const groups = order.map(name => {
@@ -1232,10 +1246,11 @@
         patient: g.patient,
         matched: g.matched,
         unmatched: g.unmatched,
-        total: g.matched.length + g.unmatched.length,
+        pending: g.pending,
+        total: g.matched.length + g.unmatched.length + g.pending.length,
         matchedCount: g.matched.length,
         unmatchedCount: g.unmatched.length,
-        errorCount: countErrorSeries(g.matched.concat(g.unmatched))
+        errorCount: countErrorSeries(g.matched.concat(g.unmatched, g.pending))
       };
     });
     return {
@@ -1333,7 +1348,7 @@
       const mtd = el('td', 'matched-cell');
       addLines(mtd, formatMatchedItems(g.matched), 'matched', g.patient);
       tr.appendChild(mtd);
-      const all = (g.matched || []).concat(g.unmatched || []);
+      const all = (g.matched || []).concat(g.unmatched || [], g.pending || []);
       const latest = latestSubmittedText(all);
       const ttd = el('td', 'time');
       if (latest) {
@@ -2370,7 +2385,7 @@
       groupByPatient, addPanel, renderBody, panelRoot: () => panelShadow,
       parseSubmittedDate, parseSubmittedDateTime, isWithinLastTwoLocalDays, lastTwoDayRange, prevWeekday, isWeekend, setNow, formatLocalDate,
       inferDateFormat, formatDateWith, mapJobObject, rowsFromPayload, pickCollection,
-      MATCH_OVERRIDES, matchOverrideTemplate, workflowFromJob,
+      MATCH_OVERRIDES, matchOverrideTemplate, seriesMatchesOverride, workflowFromJob,
       isAllowedGet, buildExpandedUrls, nextPageUrl, fetchExpanded, considerResponse,
       hookNetwork, getRowsAndSource, resetApiState, sourceLabel, safePath, debugEnabled,
       shortSeriesLabel, consolidateUnmatched, formatMatchedItems, formatLastSubmitted, latestSubmittedText,
